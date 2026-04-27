@@ -421,7 +421,7 @@
 <p class="subtitle">— MURDER MYSTERY —</p>
 
 <div id="apiSection">
-  <label>ANTHROPIC API KEY</label>
+  <label>ANTHROPIC API KEY <span style="color:#555;font-size:0.75rem">（省略可 — 管理者がサーバーに設定済みの場合）</span></label>
   <div class="row">
     <input type="password" id="apiKeyInput" placeholder="sk-ant-..." autocomplete="off">
     <button class="btn-sm" onclick="saveKey()">保存</button>
@@ -518,7 +518,7 @@
 
 <script>
 const MODEL = 'claude-opus-4-7';
-const API_URL = 'https://api.anthropic.com/v1/messages';
+const API_URL = '/api/messages';
 
 let state = {
   apiKey: '',
@@ -567,18 +567,18 @@ function hideError(elemId) {
 
 async function callClaude(systemPrompt, userMessage, prevMessages = []) {
   const key = document.getElementById('apiKeyInput').value.trim() || state.apiKey;
-  if (!key) throw new Error('APIキーを入力してください。');
 
   const messages = [...prevMessages, { role: 'user', content: userMessage }];
 
+  const headers = {
+    'anthropic-version': '2023-06-01',
+    'content-type': 'application/json',
+  };
+  if (key) headers['x-api-key'] = key;
+
   const res = await fetch(API_URL, {
     method: 'POST',
-    headers: {
-      'x-api-key': key,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-      'anthropic-dangerous-direct-browser-calls': 'true',
-    },
+    headers,
     body: JSON.stringify({
       model: MODEL,
       max_tokens: 2000,
@@ -599,8 +599,7 @@ async function callClaude(systemPrompt, userMessage, prevMessages = []) {
 async function startGame() {
   hideError('startError');
   const key = document.getElementById('apiKeyInput').value.trim() || state.apiKey;
-  if (!key) { showError('startError', 'APIキーを入力してください。'); return; }
-  state.apiKey = key;
+  if (key) state.apiKey = key;
 
   document.getElementById('startBtn').disabled = true;
   show('loadingScreen');
