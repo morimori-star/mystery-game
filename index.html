@@ -520,7 +520,7 @@
 
 <script>
 const MODEL = 'claude-opus-4-7';
-const API_URL = '/api/gemini';
+const API_URL = '/api/messages';
 
 let state = {
   apiKey: '',
@@ -624,7 +624,9 @@ async function startGame() {
 今回の設定（必ず従うこと）:
 - 時代: ${theme.period}
 - 舞台: ${theme.setting}
+- 被害者の属性: ${theme.victim}
 - 主な動機: ${theme.motive}
+- 禁止: 「資産家・大富豪が別荘・洋館・豪邸で殺される」パターンは使わないこと
 
 条件:
 - 登場人物は4〜6人（被害者含む）
@@ -819,21 +821,32 @@ function escHtml(s) {
 
 function getRandomTheme() {
   const periods = [
-    '現代', '昭和30年代', '昭和50年代', '明治時代', '大正時代', '江戸時代',
-    '1920年代のヨーロッパ', '戦後の東京', 'バブル期の日本', '幕末'
+    '現代（令和）', '昭和30年代', '昭和50年代', '明治時代', '大正時代',
+    '江戸時代末期', '1920年代のヨーロッパ', '戦後の東京（1950年代）',
+    'バブル期（1980年代末）', '幕末'
   ];
   const settings = [
-    '豪華客船', '山奥の洋館', '孤島のリゾート', '総合病院', '全寮制学校',
-    '高級ホテル', '農村の旧家', '美術館', '劇団の合宿所', '閉鎖されたスキー場',
-    '温泉旅館', '大学のキャンパス', '老舗料亭', '地方の警察署'
+    '豪華客船', '孤島の診療所', '総合病院の病棟', '全寮制の中学校',
+    '劇団の合宿所', '閉鎖されたスキー場のロッジ', '大学の研究室',
+    '老舗料亭の厨房', '地方の警察署', '下町の商店街', '農村の農協',
+    '漁村の漁協', '地方の出版社', '山岳救助隊の基地', '田舎の旅館',
+    '工場の寮', '音楽スタジオ', '美術大学のアトリエ', '地方の図書館',
+    '小さな港町の居酒屋'
+  ];
+  const victims = [
+    '地元の中学教師', '町工場の経営者', '売れない小説家', '農協の組合長',
+    '地方新聞の記者', '漁師の親方', '料亭の板前', '引退した刑事',
+    '地方病院の内科医', '小学校の校長', '商店街の金物屋の主人',
+    '劇団の看板俳優', '大学院の研究者', '山岳ガイド', '地方議員の秘書',
+    '港の税関職員', '図書館の司書', '郵便局の局長'
   ];
   const motives = [
-    '遺産相続', '復讐', '口封じ', '嫉妬', '横領の隠蔽', '失恋', '秘密の暴露阻止'
+    '過去の不正の暴露阻止', '復讐', '口封じ', '嫉妬', '横領の隠蔽',
+    '三角関係のもつれ', '事故の隠蔽', '身分詐称の発覚阻止',
+    'ライバルの排除', '冤罪を着せられた怨恨', '不倫の発覚阻止'
   ];
-  const p = periods[Math.floor(Math.random() * periods.length)];
-  const s = settings[Math.floor(Math.random() * settings.length)];
-  const m = motives[Math.floor(Math.random() * motives.length)];
-  return { period: p, setting: s, motive: m };
+  const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+  return { period: pick(periods), setting: pick(settings), victim: pick(victims), motive: pick(motives) };
 }
 </script>
 </body>
