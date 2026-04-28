@@ -508,6 +508,10 @@
       <p class="reveal-label">TRUE CULPRIT</p>
       <p class="reveal-culprit" id="revealCulprit"></p>
       <p class="reveal-label">EXPLANATION</p>
+      <div id="revealLoading" style="display:none;padding:12px 0">
+        <div class="spinner" style="width:24px;height:24px;border-width:2px;margin:0 auto 8px"></div>
+        <p style="font-size:0.8rem;color:#999;text-align:center">解説を生成中…</p>
+      </div>
       <p class="reveal-explanation" id="revealExplanation"></p>
     </div>
 
@@ -631,7 +635,7 @@ async function startGame() {
 条件:
 - 登場人物は4〜6人（被害者含む）
 - 物理的、論理的な「矛盾（トリック）」を必ず一つ仕込むこと
-- 証拠品や状況描写の中に、解決の鍵を伏線として隠すこと
+- 証拠品や状況描写の中に、解決の鍵を伏線として隠すこと（「飲みかけの茶碗」「倒れたコップ」など陳腐な証拠品は使わず、舞台・職業に合ったオリジナルの証拠を使うこと）
 - 犯人以外の容疑者にも「疑わしく見える動機や行動」を必ず持たせる（ミスリード）
 - 第一印象では別の人物が怪しく見えるように構成する
 - 答えは論理的に導けるが、注意深く読まないと気づかない難易度にする`;
@@ -776,11 +780,13 @@ ${state.story}
   }
 }
 
-function makeGuess() {
+async function makeGuess() {
   const sel = document.getElementById('guessSelect');
   const guess = sel.value.trim();
   if (!guess) { showError('questionError', '容疑者を選択してください。'); return; }
   hideError('questionError');
+
+  document.getElementById('guessBtn').disabled = true;
 
   const culpritName = state.culprit.split('（')[0].trim();
   const guessName = guess.split('（')[0].trim();
@@ -794,9 +800,42 @@ function makeGuess() {
     : `あなたは ${guessName} を指名した。しかし…`;
 
   document.getElementById('revealCulprit').textContent = state.culprit;
-  document.getElementById('revealExplanation').textContent = state.explanation;
+  document.getElementById('revealExplanation').textContent = '';
+  document.getElementById('revealLoading').style.display = 'block';
 
   show('resultScreen');
+
+  const qaText = state.qaHistory.length > 0
+    ? state.qaHistory.map((qa, i) => `Q${i+1}: ${qa.q}\nA${i+1}: ${qa.a}`).join('\n\n')
+    : '（質問なし）';
+
+  const systemPrompt = `あなたは推理ゲームのナレーターです。プレイヤーが犯人を指名したので、真相を解説してください。
+
+【事件概要】
+${state.story}
+
+【真相】
+犯人: ${state.culprit}
+犯行動機・方法: ${state.explanation}
+
+【プレイヤーとのQ&A】
+${qaText}
+
+以下の方針で解説してください:
+- 犯人・動機・犯行方法を明確に説明する
+- Q&Aで匂わせたヒントや回答が真相とどう結びつくかを具体的に拾い上げる
+- プレイヤーが質問で掘り下げた疑問に答え、すっきり腑に落ちる解説にする
+- 400〜500文字程度、日本語で`;
+
+  try {
+    const explanation = await callClaude(systemPrompt, '真相を解説してください。');
+    document.getElementById('revealExplanation').textContent = explanation;
+  } catch (e) {
+    document.getElementById('revealExplanation').textContent = state.explanation;
+  } finally {
+    document.getElementById('revealLoading').style.display = 'none';
+    document.getElementById('guessBtn').disabled = false;
+  }
 }
 
 function resetGame() {
