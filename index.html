@@ -493,39 +493,39 @@
       <button class="btn-ask" id="askBtn" onclick="askQuestion()">質問する</button>
     </div>
 
-    <hr class="divider">
-
-    <p class="section-title">▸ 犯人を指名する</p>
-    <div class="guess-row">
-      <select class="guess-select" id="guessSelect">
-        <option value="">— 容疑者を選択 —</option>
-      </select>
-      <button class="btn-guess" id="guessBtn" onclick="makeGuess()">指名する</button>
-    </div>
-    <div class="error-msg" id="questionError"></div>
-  </div>
-
-  <!-- Result -->
-  <div id="resultScreen">
-    <div class="result-box">
-      <div class="result-icon" id="resultIcon"></div>
-      <h2 class="result-title" id="resultTitle"></h2>
-      <p class="result-subtitle" id="resultSubtitle"></p>
-    </div>
-
-    <div class="reveal-box">
-      <p class="reveal-label">TRUE CULPRIT</p>
-      <p class="reveal-culprit" id="revealCulprit"></p>
-      <p class="reveal-label">EXPLANATION</p>
-      <div id="revealLoading" style="display:none;padding:12px 0">
-        <div class="spinner" style="width:24px;height:24px;border-width:2px;margin:0 auto 8px"></div>
-        <p style="font-size:0.8rem;color:#999;text-align:center">解説を生成中…</p>
+    <div id="guessSection">
+      <hr class="divider">
+      <p class="section-title">▸ 犯人を指名する</p>
+      <div class="guess-row">
+        <select class="guess-select" id="guessSelect">
+          <option value="">— 容疑者を選択 —</option>
+        </select>
+        <button class="btn-guess" id="guessBtn" onclick="makeGuess()">指名する</button>
       </div>
-      <p class="reveal-explanation" id="revealExplanation"></p>
+      <div class="error-msg" id="questionError"></div>
     </div>
 
-    <div style="text-align:center">
-      <button class="replay-btn" onclick="resetGame()">もう一度プレイ</button>
+    <!-- インライン結果（指名後にここに展開） -->
+    <div id="inlineResult" style="display:none">
+      <hr class="divider">
+      <div class="result-box">
+        <div class="result-icon" id="resultIcon"></div>
+        <h2 class="result-title" id="resultTitle"></h2>
+        <p class="result-subtitle" id="resultSubtitle"></p>
+      </div>
+      <div class="reveal-box">
+        <p class="reveal-label">TRUE CULPRIT</p>
+        <p class="reveal-culprit" id="revealCulprit"></p>
+        <p class="reveal-label">EXPLANATION</p>
+        <div id="revealLoading" style="display:none;padding:12px 0">
+          <div class="spinner" style="width:24px;height:24px;border-width:2px;margin:0 auto 8px"></div>
+          <p style="font-size:0.8rem;color:#999;text-align:center">解説を生成中…</p>
+        </div>
+        <p class="reveal-explanation" id="revealExplanation"></p>
+      </div>
+      <div style="text-align:center">
+        <button class="replay-btn" onclick="resetGame()">もう一度プレイ</button>
+      </div>
     </div>
   </div>
 
@@ -566,7 +566,7 @@ function saveKey() {
 }
 
 function show(id) {
-  ['startScreen','loadingScreen','storyScreen','resultScreen'].forEach(s => {
+  ['startScreen','loadingScreen','storyScreen'].forEach(s => {
     document.getElementById(s).style.display = s === id ? 'block' : 'none';
   });
 }
@@ -707,6 +707,8 @@ function renderStoryScreen() {
   });
 
   document.getElementById('qaList').innerHTML = '';
+  document.getElementById('guessSection').style.display = 'block';
+  document.getElementById('inlineResult').style.display = 'none';
   updateQuestionUI();
 }
 
@@ -815,7 +817,9 @@ async function makeGuess() {
   document.getElementById('revealExplanation').textContent = '';
   document.getElementById('revealLoading').style.display = 'block';
 
-  show('resultScreen');
+  document.getElementById('guessSection').style.display = 'none';
+  document.getElementById('inlineResult').style.display = 'block';
+  document.getElementById('inlineResult').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   const qaText = state.qaHistory.length > 0
     ? state.qaHistory.map((qa, i) => `Q${i+1}: ${qa.q}\nA${i+1}: ${qa.a}`).join('\n\n')
