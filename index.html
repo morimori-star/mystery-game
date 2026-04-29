@@ -455,7 +455,7 @@
   <!-- Loading -->
   <div id="loadingScreen">
     <div class="spinner"></div>
-    <p class="loading-text">事件を生成中…</p>
+    <p class="loading-text" id="loadingText">事件を設計中…</p>
   </div>
 
   <!-- Story + Questions -->
@@ -621,10 +621,44 @@ async function startGame() {
   show('loadingScreen');
 
   const theme = getRandomTheme();
-  const systemPrompt = `# Role
-あなたは一流のミステリー作家兼、厳格なゲームマスターです。プレイヤーが「3つの質問」で犯人を当てるショートミステリーゲームを提供します。
 
-必ず以下のJSON形式のみで返答し、コードブロックや説明文は不要です:
+  const blueprintPrompt = `あなたはミステリー小説の設計者です。まず事件の設計図を論理的に組み立ててください。
+
+設定（必ず従うこと）:
+- 時代・地域: ${theme.period}
+- 舞台: ${theme.setting}
+- 被害者の属性: ${theme.victim}
+- 主な動機: ${theme.motive}
+
+必ず以下のJSON形式のみで返答し、コードブロック・説明文は不要です:
+{
+  "culprit": "犯人の名前と職業",
+  "victim": "被害者の名前と職業",
+  "method": "犯行方法（凶器・場所・犯人がどう接近したか）",
+  "motive": "具体的な動機",
+  "timeline": [
+    {"time": "時刻", "who": "人物名", "what": "行動", "where": "場所"}
+  ],
+  "trick": "論理的トリックの説明（物理的矛盾とその解決策）",
+  "evidence": [
+    {"item": "証拠品", "location": "発見場所", "significance": "真相における意味"}
+  ],
+  "alibis": [
+    {"person": "容疑者名", "alibi": "アリバイの内容", "weakness": "アリバイの穴または嘘"}
+  ],
+  "red_herrings": ["ミスリード要素1", "ミスリード要素2"]
+}
+
+重要：timelineはすべての登場人物の行動を矛盾なく整合させること。evidenceの各証拠品はtrickまたはmethodと論理的に一致させること。`;
+
+  const storyPrompt = blueprint => `# Role
+あなたは一流のミステリー作家です。以下の【事件設計図】を忠実に再現した2500文字程度のショートミステリーを書いてください。
+設計図と矛盾する描写は絶対に書かないこと。証拠・足跡・アリバイはすべて設計図の内容と一致させること。
+
+【事件設計図】
+${blueprint}
+
+必ず以下のJSON形式のみで返答し、コードブロック・説明文は不要です:
 {
   "title": "ストーリーを象徴するタイトル",
   "story": "2500文字程度の事件概要（被害者・状況・各容疑者の証言・行動）",
@@ -634,26 +668,27 @@ async function startGame() {
   "clues": ["真犯人を示す決定的手がかり", "見落としやすいが重要な手がかり", "ニセの手がかりの正体"]
 }
 
-今回の設定（必ず従うこと）:
-- 時代: ${theme.period}
-- 舞台: ${theme.setting}
-- 被害者の属性: ${theme.victim}
-- 主な動機: ${theme.motive}
-- 上記の設定を忠実に反映し、毎回異なる社会背景・職業・日常環境の物語にすること
-
 条件:
 - 登場人物は4〜6人（被害者含む）
-- 物理的、論理的な「矛盾（トリック）」を必ず一つ仕込むこと
-- 証拠品や状況描写の中に、解決の鍵を伏線として隠すこと（「飲みかけの茶碗」「倒れたコップ」など陳腐な証拠品は使わず、舞台・職業に合ったオリジナルの証拠を使うこと）
-- 犯人以外の容疑者にも「疑わしく見える動機や行動」を必ず持たせる（ミスリード）
-- 第一印象では別の人物が怪しく見えるように構成する
-- 答えは論理的に導けるが、注意深く読まないと気づかない難易度にする
-- 殺害現場は屋内の部屋に限らず、屋外・工場内・船上・路地・農地など多様な場所を積極的に使うこと
-- 登場人物の役割は「当直」「使用人」「書類整理中の人物」などのステレオタイプを避け、舞台と被害者の職業に自然に結びついた役割にすること
-- 毎回まったく異なる状況・人間関係・事件の構造にすること`;
+- 証拠品は設計図のevidenceに沿ったオリジナルのものを使い「飲みかけの茶碗」等の陳腐な表現は使わないこと
+- 犯人以外の容疑者にも疑わしく見える動機・行動を持たせる
+- 第一印象では別の人物が怪しく見えるよう構成する
+- 登場人物の役割は「当直」「使用人」「書類整理中の人物」などのステレオタイプを避けること
+- 殺害現場は設計図に従い、屋内の部屋に固定しないこと`;
 
   try {
-    const raw = await callClaude(systemPrompt, '新しい事件を生成してください。');
+    document.getElementById('loadingText').textContent = '事件を設計中… (1/2)';
+    const blueprintRaw = await callClaude(blueprintPrompt, '事件設計図を作成してください。');
+    let blueprintJson;
+    try {
+      const m = blueprintRaw.match(/\{[\s\S]*\}/);
+      blueprintJson = JSON.parse(m ? m[0] : blueprintRaw);
+    } catch {
+      throw new Error('設計図の解析に失敗しました。もう一度お試しください。');
+    }
+
+    document.getElementById('loadingText').textContent = 'ストーリーを執筆中… (2/2)';
+    const raw = await callClaude(storyPrompt(JSON.stringify(blueprintJson, null, 2)), 'ストーリーを書いてください。');
     let json;
     try {
       const m = raw.match(/\{[\s\S]*\}/);
