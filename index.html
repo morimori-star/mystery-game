@@ -19,18 +19,43 @@
     padding: 40px 16px 80px;
   }
 
+  #heroHeader {
+    width: 100%;
+    max-width: 700px;
+    background: #080808;
+    border-radius: 12px;
+    position: relative;
+    overflow: hidden;
+    margin-bottom: 32px;
+  }
+
+  #smokeCanvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  .hero-content {
+    position: relative;
+    z-index: 1;
+    text-align: center;
+    padding: 52px 32px 48px;
+  }
+
   h1 {
-    font-size: 2rem;
-    letter-spacing: 0.2em;
-    color: #7a4e1e;
-    margin-bottom: 8px;
+    font-size: 2.4rem;
+    letter-spacing: 0.15em;
+    color: #fff;
+    text-shadow: 0 0 40px rgba(255,255,255,0.25);
+    margin-bottom: 10px;
   }
 
   .subtitle {
-    font-size: 0.85rem;
-    color: #999;
-    letter-spacing: 0.15em;
-    margin-bottom: 40px;
+    font-size: 0.88rem;
+    color: #aaa;
+    letter-spacing: 0.2em;
+    margin-bottom: 0;
   }
 
   /* API key section */
@@ -427,8 +452,13 @@
 </head>
 <body>
 
-<h1>推　理　ゲ　ー　ム</h1>
-<p class="subtitle">— MURDER MYSTERY —</p>
+<div id="heroHeader">
+  <canvas id="smokeCanvas"></canvas>
+  <div class="hero-content">
+    <h1>Three Questions</h1>
+    <p class="subtitle">— A Short Mystery Game —</p>
+  </div>
+</div>
 
 <div id="apiSection">
   <label>ANTHROPIC API KEY <span style="color:#555;font-size:0.75rem">（省略可 — 管理者がサーバーに設定済みの場合）</span></label>
@@ -443,7 +473,7 @@
 
   <!-- Start -->
   <div id="startScreen">
-    <div class="start-icon">🕯️</div>
+    <div class="start-icon">🗝️</div>
     <p class="start-text">
       密室、疑惑、そして嘘。<br>
       3つの質問で真実を暴け。
@@ -960,6 +990,64 @@ function getRandomTheme() {
   const pick = arr => arr[Math.floor(Math.random() * arr.length)];
   return { period: pick(periods), setting: pick(settings), victim: pick(victims), motive: pick(motives) };
 }
+
+// スモークアニメーション
+(function initSmoke() {
+  const canvas = document.getElementById('smokeCanvas');
+  const ctx = canvas.getContext('2d');
+
+  function resize() {
+    canvas.width = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  function Particle() {
+    this.reset = function(randomLife) {
+      this.x = Math.random() * canvas.width;
+      this.y = canvas.height + 10;
+      this.r = Math.random() * 28 + 18;
+      this.vx = (Math.random() - 0.5) * 0.4;
+      this.vy = -(Math.random() * 0.5 + 0.35);
+      this.maxLife = Math.random() * 180 + 140;
+      this.life = randomLife ? Math.random() * this.maxLife : 0;
+      this.alpha = 0;
+      this.peak = Math.random() * 0.13 + 0.05;
+    };
+    this.reset(true);
+
+    this.update = function() {
+      this.x += this.vx + Math.sin(this.life * 0.04) * 0.3;
+      this.y += this.vy;
+      this.r += 0.25;
+      this.life++;
+      const t = this.life / this.maxLife;
+      this.alpha = t < 0.2 ? (t / 0.2) * this.peak
+                 : t > 0.75 ? ((1 - t) / 0.25) * this.peak
+                 : this.peak;
+      if (this.life >= this.maxLife) this.reset(false);
+    };
+
+    this.draw = function() {
+      const g = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.r);
+      g.addColorStop(0, `rgba(200,200,210,${this.alpha})`);
+      g.addColorStop(1, `rgba(200,200,210,0)`);
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+      ctx.fillStyle = g;
+      ctx.fill();
+    };
+  }
+
+  const particles = Array.from({length: 18}, () => new Particle());
+
+  (function loop() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    particles.forEach(p => { p.update(); p.draw(); });
+    requestAnimationFrame(loop);
+  })();
+})();
 </script>
 </body>
 </html>
