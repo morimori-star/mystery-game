@@ -1102,10 +1102,10 @@ const bgm = (() => {
       const off = new OffCtx(1, Math.ceil(44100 * LOOP_DUR), 44100);
 
       // ディレイ系リバーブ（空間感を出す）
-      const dry = off.createGain();  dry.gain.value = 0.85;
-      const wet = off.createGain();  wet.gain.value = 0.05;
+      const dry = off.createGain();  dry.gain.value = 0.95;
+      const wet = off.createGain();  wet.gain.value = 0.02;
       const dly = off.createDelay(0.6); dly.delayTime.value = 0.32;
-      const fb  = off.createGain();  fb.gain.value  = 0.18;
+      const fb  = off.createGain();  fb.gain.value  = 0.08;
       dry.connect(off.destination);   // ドライ信号 → 出力
       dry.connect(dly);               // ドライ信号 → ディレイへ送る
       dly.connect(fb); fb.connect(dly);             // フィードバックループ
