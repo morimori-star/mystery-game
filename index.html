@@ -1024,35 +1024,26 @@ function resetGame() {
 
 // ===== BGM =====
 const bgm = (() => {
-  let ctx = null, gainNode = null, source = null;
-  let buffer = null;
-  // フォールバック用 look-ahead scheduler
-  let playing = false, ticker = null, noteIdx = 0, nextNoteTime = 0;
+  let audioEl = null;
+  let fadeTimer = null;
 
   const B = 60 / 76;
   const SEQ = [
-    [392.00, 2*B], [311.13,   B], [349.23,     B],
+    [392.00, 2*B], [311.13,    B], [349.23,     B],
     [392.00,   B], [523.25, 1.5*B], [466.16, 0.5*B], [415.30, B],
-    [392.00, 2*B], [349.23,   B], [311.13,     B],
-    [293.66,   B], [311.13,   B], [261.63,   2*B],
+    [392.00, 2*B], [349.23,    B], [311.13,     B],
+    [293.66,   B], [311.13,    B], [261.63,   2*B],
   ];
   const LOOP_DUR = SEQ.reduce((s, [, d]) => s + d, 0);
 
-  // バイブラフォン風合成: サイン波（基音）+ 微妙にデチューンした同音（コーラス）+ 第2倍音
-  function synthNote(audioCtx, dest, freq, t, dur) {
-    const partials = [
-      [freq,        0.28],   // 基音
-      [freq * 1.004, 0.22],  // わずかなデチューン（コーラス感）
-      [freq * 2,    0.06],   // 第2倍音（明るさを加える）
-    ];
-    for (const [f, v] of partials) {
-      const osc = audioCtx.createOscillator();
-      const env = audioCtx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = f;
+  // バイブラフォン風合成（基音 + デチューン + 第2倍音）
+  function synthNote(actx, dest, freq, t, dur) {
+    for (const [f, v] of [[freq, 0.28], [freq*1.004, 0.22], [freq*2, 0.06]]) {
+      const osc = actx.createOscillator(), env = actx.createGain();
+      osc.type = 'sine'; osc.frequency.value = f;
       env.gain.setValueAtTime(0, t);
-      env.gain.linearRampToValueAtTime(v, t + 0.012);          // 速い立ち上がり
-      env.gain.exponentialRampToValueAtTime(v * 0.35, t + dur * 0.65); // 自然な減衰
+      env.gain.linearRampToValueAtTime(v, t + 0.012);
+      env.gain.exponentialRampToValueAtTime(v * 0.35, t + dur * 0.65);
       env.gain.exponentialRampToValueAtTime(0.0001, t + dur * 0.96);
       env.gain.setValueAtTime(0, t + dur);
       osc.connect(env); env.connect(dest);
@@ -1060,77 +1051,70 @@ const bgm = (() => {
     }
   }
 
-  // ページ読み込み時にバッファを事前生成（ユーザー操作不要）
-  const OffCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-  if (OffCtx) {
-    (async () => {
-      try {
-        const off = new OffCtx(2, Math.ceil(44100 * LOOP_DUR), 44100);
-        let t = 0;
-        for (const [freq, dur] of SEQ) {
-          synthNote(off, off.destination, freq, t, dur * 0.9);
-          t += dur;
-        }
-        buffer = await off.startRendering();
-      } catch(e) {}
-    })();
+  // AudioBuffer → WAV ArrayBuffer
+  function toWav(buf) {
+    const d = buf.getChannelData(0), n = d.length, sr = buf.sampleRate;
+    const ab = new ArrayBuffer(44 + n * 2), v = new DataView(ab);
+    const ws = (o, s) => [...s].forEach((c, i) => v.setUint8(o+i, c.charCodeAt(0)));
+    ws(0,'RIFF'); v.setUint32(4, 36+n*2, true); ws(8,'WAVE');
+    ws(12,'fmt '); v.setUint32(16,16,true); v.setUint16(20,1,true);
+    v.setUint16(22,1,true); v.setUint32(24,sr,true); v.setUint32(28,sr*2,true);
+    v.setUint16(32,2,true); v.setUint16(34,16,true);
+    ws(36,'data'); v.setUint32(40,n*2,true);
+    for (let i=0; i<n; i++) {
+      const s = Math.max(-1, Math.min(1, d[i]));
+      v.setInt16(44+i*2, s < 0 ? s*0x8000 : s*0x7FFF, true);
+    }
+    return ab;
   }
 
-  // look-ahead scheduler（OfflineAudioContext が失敗した場合のフォールバック）
-  function tick() {
-    if (!playing || !ctx || !gainNode) return;
-    while (nextNoteTime < ctx.currentTime + 0.2) {
-      const [freq, dur] = SEQ[noteIdx % SEQ.length];
-      synthNote(ctx, gainNode, freq, nextNoteTime, dur * 0.9);
-      nextNoteTime += dur; noteIdx++;
-    }
-    ticker = setTimeout(tick, 80);
-  }
+  // ページ読み込み時に音声を事前レンダリングして <audio> 要素に設定
+  (async () => {
+    const OffCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if (!OffCtx) return;
+    try {
+      const off = new OffCtx(1, Math.ceil(44100 * LOOP_DUR), 44100);
+      let t = 0;
+      for (const [freq, dur] of SEQ) { synthNote(off, off.destination, freq, t, dur * 0.9); t += dur; }
+      const rendered = await off.startRendering();
+      const url = URL.createObjectURL(new Blob([toWav(rendered)], { type: 'audio/wav' }));
+      audioEl = new Audio(url);
+      audioEl.loop = true;
+      audioEl.volume = 0;
+    } catch(e) {}
+  })();
 
-  function doPlay() {
-    gainNode = ctx.createGain();
-    gainNode.gain.setValueAtTime(0, ctx.currentTime);
-    gainNode.gain.linearRampToValueAtTime(0.65, ctx.currentTime + 2.5);
-    gainNode.connect(ctx.destination);
-    if (buffer) {
-      source = ctx.createBufferSource();
-      source.buffer = buffer; source.loop = true;
-      source.connect(gainNode); source.start();
-    } else {
-      playing = true; noteIdx = 0;
-      nextNoteTime = ctx.currentTime + 0.05;
-      tick();
-    }
+  function fadeTo(target, ms) {
+    if (!audioEl) return;
+    if (fadeTimer) clearInterval(fadeTimer);
+    const step = (target - audioEl.volume) / (ms / 80);
+    fadeTimer = setInterval(() => {
+      audioEl.volume = Math.max(0, Math.min(1, audioEl.volume + step));
+      if (Math.abs(audioEl.volume - target) < 0.02) {
+        audioEl.volume = target;
+        clearInterval(fadeTimer); fadeTimer = null;
+        if (target === 0) audioEl.pause();
+      }
+    }, 80);
   }
 
   return {
-    // iOS Safari 対応: ボタンの onclick から同期的に呼ぶこと
+    // iOS: ユーザージェスチャーの onclick から同期的に呼ぶこと
     unlock() {
-      if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
-      if (ctx.state === 'suspended') ctx.resume();
+      if (!audioEl) return;
+      // <audio> 要素を一度 play() して即 pause() → iOS のロック解除
+      audioEl.play().then(() => audioEl.pause()).catch(() => {});
     },
     start() {
       if (!document.getElementById('bgmToggle').checked) return;
-      if (source || playing) return;
-      if (!ctx) this.unlock();
-      if (ctx.state === 'suspended') {
-        ctx.resume().then(doPlay);
-      } else {
-        doPlay();
-      }
+      if (!audioEl) return;
+      audioEl.currentTime = 0;
+      audioEl.volume = 0;
+      audioEl.play().catch(() => {});
+      fadeTo(0.75, 2500);
     },
     stop() {
-      playing = false;
-      if (ticker) { clearTimeout(ticker); ticker = null; }
-      if (ctx && gainNode) {
-        const g = gainNode, s = source;
-        gainNode = null; source = null;
-        const t = ctx.currentTime;
-        g.gain.cancelScheduledValues(t);
-        g.gain.setValueAtTime(g.gain.value, t);
-        g.gain.linearRampToValueAtTime(0, t + 1.5);
-        setTimeout(() => { try { if (s) { s.stop(); s.disconnect(); } g.disconnect(); } catch(e) {} }, 2000);
-      }
+      fadeTo(0, 1500);
     },
   };
 })();
