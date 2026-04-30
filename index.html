@@ -1021,87 +1021,84 @@ function resetGame() {
   document.getElementById('startBtn').disabled = false;
 }
 
-// ===== BGM (Web Audio API — look-ahead scheduler) =====
+// ===== BGM (OfflineAudioContext でループバッファを事前レンダリング) =====
 const bgm = (() => {
-  let ctx = null, master = null, ticker = null, playing = false;
-  let noteIdx = 0, nextNoteTime = 0;
+  let audioCtx = null, gainNode = null, source = null;
+  let buffer = null;
 
-  // C minor, 76 BPM — melody as [freq_hz, duration_sec]
+  // C minor, 76 BPM
   const B = 60 / 76;
+  const SR = 44100;
   const SEQ = [
-    [392.00, 2*B], [311.13, B],   [349.23, B],
+    [392.00, 2*B], [311.13, B],    [349.23, B],
     [392.00, B],   [523.25, 1.5*B],[466.16, 0.5*B],[415.30, B],
-    [392.00, 2*B], [349.23, B],   [311.13, B],
-    [293.66, B],   [311.13, B],   [261.63, 2*B],
+    [392.00, 2*B], [349.23, B],    [311.13, B],
+    [293.66, B],   [311.13, B],    [261.63, 2*B],
   ];
+  const LOOP_DUR = SEQ.reduce((s, [, d]) => s + d, 0); // 16 beats
+
+  // ページ読み込み時にバックグラウンドで音声バッファを生成（ユーザー操作不要）
+  (async () => {
+    try {
+      const off = new OfflineAudioContext(1, Math.ceil(SR * LOOP_DUR), SR);
+      let t = 0;
+      for (const [freq, dur] of SEQ) {
+        const osc = off.createOscillator();
+        const env = off.createGain();
+        osc.type = 'triangle';
+        osc.frequency.value = freq;
+        env.gain.setValueAtTime(0, t);
+        env.gain.linearRampToValueAtTime(0.3, t + 0.06);
+        env.gain.setValueAtTime(0.3, t + dur * 0.78);
+        env.gain.linearRampToValueAtTime(0, t + dur * 0.98);
+        osc.connect(env);
+        env.connect(off.destination);
+        osc.start(t);
+        osc.stop(t + dur);
+        t += dur;
+      }
+      buffer = await off.startRendering();
+    } catch(e) { /* OfflineAudioContext 非対応環境ではスキップ */ }
+  })();
 
   function getCtx() {
-    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
-    return ctx;
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    return audioCtx;
   }
 
-  function scheduleNote(freq, t, dur) {
-    const c = getCtx();
-    const osc = c.createOscillator();
-    const env = c.createGain();
-    osc.type = 'triangle';
-    osc.frequency.value = freq;
-    env.gain.setValueAtTime(0, t);
-    env.gain.linearRampToValueAtTime(0.22, t + 0.06);
-    env.gain.setValueAtTime(0.22, t + dur * 0.75);
-    env.gain.linearRampToValueAtTime(0, t + dur);
-    osc.connect(env);
-    env.connect(master);
-    osc.start(t);
-    osc.stop(t + dur + 0.02);
-  }
+  function play(c) {
+    gainNode = c.createGain();
+    gainNode.gain.setValueAtTime(0, c.currentTime);
+    gainNode.gain.linearRampToValueAtTime(0.65, c.currentTime + 2.5);
+    gainNode.connect(c.destination);
 
-  function tick() {
-    if (!playing || !master) return;
-    const c = getCtx();
-    const lookahead = 0.18;
-    while (nextNoteTime < c.currentTime + lookahead) {
-      const [freq, dur] = SEQ[noteIdx % SEQ.length];
-      scheduleNote(freq, nextNoteTime, dur * 0.88);
-      nextNoteTime += dur;
-      noteIdx++;
-    }
-    ticker = setTimeout(tick, 80);
-  }
-
-  function doStart() {
-    const c = getCtx();
-    nextNoteTime = c.currentTime + 0.05;
-    noteIdx = 0;
-    tick();
+    source = c.createBufferSource();
+    source.buffer = buffer;
+    source.loop = true;
+    source.connect(gainNode);
+    source.start();
   }
 
   return {
     start() {
       if (!document.getElementById('bgmToggle').checked) return;
-      if (playing) return;
-      playing = true;
+      if (source || !buffer) return;
       const c = getCtx();
-      master = c.createGain();
-      master.gain.setValueAtTime(0, c.currentTime);
-      master.gain.linearRampToValueAtTime(0.7, c.currentTime + 2.5);
-      master.connect(c.destination);
       if (c.state === 'suspended') {
-        c.resume().then(doStart);
+        c.resume().then(() => play(c));
       } else {
-        doStart();
+        play(c);
       }
     },
     stop() {
-      playing = false;
-      if (ticker) { clearTimeout(ticker); ticker = null; }
-      if (master && ctx) {
-        const m = master; master = null;
-        const t = ctx.currentTime;
-        m.gain.cancelScheduledValues(t);
-        m.gain.setValueAtTime(m.gain.value, t);
-        m.gain.linearRampToValueAtTime(0, t + 1.5);
-        setTimeout(() => { try { m.disconnect(); } catch(e) {} }, 2000);
+      if (gainNode && audioCtx) {
+        const g = gainNode; gainNode = null;
+        const t = audioCtx.currentTime;
+        g.gain.cancelScheduledValues(t);
+        g.gain.setValueAtTime(g.gain.value, t);
+        g.gain.linearRampToValueAtTime(0, t + 1.5);
+        const s = source; source = null;
+        setTimeout(() => { try { s.stop(); s.disconnect(); g.disconnect(); } catch(e) {} }, 2000);
       }
     },
   };
