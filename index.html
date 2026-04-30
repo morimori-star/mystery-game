@@ -1053,21 +1053,25 @@ const bgm = (() => {
 
   // 三角波 + ローパスフィルター（1音=1オシレーター、クリッピングなし）
   function synthNote(actx, dest, freq, t, dur) {
-    const d = Math.min(dur * 1.08, 2.0);  // 隣の音と少し重ねてレガートに
-    const osc = actx.createOscillator();
+    const d = Math.min(dur * 1.08, 2.0);
     const lpf = actx.createBiquadFilter();
     const env = actx.createGain();
-    osc.type = 'triangle';
-    osc.frequency.value = freq;
     lpf.type = 'lowpass';
-    lpf.frequency.value = 1100;  // 少し明るめに開く
+    lpf.frequency.value = 1100;
     lpf.Q.value = 0.4;
+    // 2本をわずかにデチューンして重ねる（コーラス効果で音を太く）
+    for (const cents of [-7, +7]) {
+      const osc = actx.createOscillator();
+      osc.type = 'triangle';
+      osc.frequency.value = freq * Math.pow(2, cents / 1200);
+      osc.connect(lpf);
+      osc.start(t); osc.stop(t + d + 0.05);
+    }
     env.gain.setValueAtTime(0, t);
-    env.gain.linearRampToValueAtTime(0.50, t + 0.06);
-    env.gain.setValueAtTime(0.46, t + d * 0.85);  // サステインを長く
+    env.gain.linearRampToValueAtTime(0.38, t + 0.06);
+    env.gain.setValueAtTime(0.35, t + d * 0.85);
     env.gain.exponentialRampToValueAtTime(0.001, t + d);
-    osc.connect(lpf); lpf.connect(env); env.connect(dest);
-    osc.start(t); osc.stop(t + d + 0.05);
+    lpf.connect(env); env.connect(dest);
   }
 
   // AudioBuffer → WAV ArrayBuffer（ピーク正規化でクリッピング防止）
