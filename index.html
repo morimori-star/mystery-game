@@ -612,7 +612,7 @@
 </div>
 
 <script>
-const MODEL = 'claude-opus-4-7';
+const MODEL = 'claude-sonnet-4-6';
 const API_URL = '/api/messages';
 
 let state = {
@@ -1028,29 +1028,40 @@ const bgm = (() => {
   let fadeTimer = null;
   let looping = false;
 
-  const B = 60 / 76;
+  const B = 60 / 120;
   const SEQ = [
-    [392.00, 2*B], [311.13,    B], [349.23,     B],
-    [392.00,   B], [523.25, 1.5*B], [466.16, 0.5*B], [415.30, B],
-    [392.00, 2*B], [349.23,    B], [311.13,     B],
-    [293.66,   B], [311.13,    B], [261.63,   2*B],
+    // フレーズ1：躍動感ある上昇
+    [659.25,    B], [587.33, 0.5*B], [659.25, 0.5*B],
+    [698.46,    B], [659.25,    B],  [523.25,    B],
+    [587.33,    B], [659.25,  2*B],
+    // フレーズ2：応答
+    [587.33, 0.5*B], [659.25, 0.5*B],
+    [698.46,    B], [659.25,    B],  [587.33,    B],
+    [493.88,    B], [440.00,  2*B],
+    // フレーズ3：半音進行（ジャジー）
+    [493.88, 0.5*B], [523.25, 0.5*B],
+    [554.37,    B], [587.33,    B],  [554.37,    B],
+    [523.25,    B], [493.88,  2*B],
+    // フレーズ4：締め
+    [415.30,    B], [440.00, 0.5*B], [466.16, 0.5*B],
+    [493.88,    B], [523.25,    B],  [440.00, 2.5*B],
   ];
   const LOOP_DUR = SEQ.reduce((s, [, d]) => s + d, 0);
 
   // 三角波 + ローパスフィルター（1音=1オシレーター、クリッピングなし）
   function synthNote(actx, dest, freq, t, dur) {
-    const d = Math.min(dur * 1.8, 3.2);
+    const d = Math.min(dur * 0.82, 1.4);  // アップテンポ向けに短めにカット
     const osc = actx.createOscillator();
     const lpf = actx.createBiquadFilter();
     const env = actx.createGain();
-    osc.type = 'triangle';       // 奇数倍音のみ・自然に柔らかい
+    osc.type = 'triangle';
     osc.frequency.value = freq;
     lpf.type = 'lowpass';
-    lpf.frequency.value = 900;   // 高域カットで丸みを出す
+    lpf.frequency.value = 900;
     lpf.Q.value = 0.5;
     env.gain.setValueAtTime(0, t);
-    env.gain.linearRampToValueAtTime(0.55, t + 0.08);   // 80ms でゆっくり立ち上がり
-    env.gain.setValueAtTime(0.50, t + d * 0.80);
+    env.gain.linearRampToValueAtTime(0.55, t + 0.04);   // 40ms で素早く立ち上がり
+    env.gain.setValueAtTime(0.50, t + d * 0.75);
     env.gain.exponentialRampToValueAtTime(0.001, t + d);
     osc.connect(lpf); lpf.connect(env); env.connect(dest);
     osc.start(t); osc.stop(t + d + 0.05);
@@ -1138,12 +1149,15 @@ const bgm = (() => {
       looping = true;
       if (!document.getElementById('bgmToggle').checked) return;
       if (!audioEl) return;
+      audioEl.loop = true;
+      audioEl.currentTime = 0;
       audioEl.volume = 0;
       audioEl.play().catch(() => {});
       fadeTo(0.75, 2500);
     },
     stop() {
       looping = false;
+      if (audioEl) audioEl.loop = false;  // iOS: loop プロパティも明示的に無効化
       fadeTo(0, 1500);
     },
   };
