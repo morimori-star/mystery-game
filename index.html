@@ -1024,134 +1024,22 @@ function resetGame() {
 
 // ===== BGM =====
 const bgm = (() => {
-  let audioEl = null;
   let fadeTimer = null;
   let looping = false;
 
-  const B = 60 / 148;
-  const TRANSPOSE = Math.pow(2, -5 / 12); // 5半音下（完全4度）
-  const SEQ = [
-    // フレーズ1：付点リズムでスキップするような弾み
-    [440.00, 1.5*B], [493.88, 0.5*B], [523.25,    B],
-    [587.33, 1.5*B], [659.25, 0.5*B], [523.25, 1.5*B],
-    [0,      0.5*B], // 休符
-    // フレーズ2：8分音符の連続で駆け上がり→解放
-    [493.88, 0.5*B], [523.25, 0.5*B], [587.33, 0.5*B], [659.25, 0.5*B],
-    [698.46,    B],  [659.25, 1.5*B], [587.33, 0.5*B],
-    [523.25, 1.5*B],
-    [0,      0.5*B], // 休符
-    // フレーズ3：シンコペーション（C5で穏やかに）
-    [587.33, 0.5*B], [523.25,    B],  [587.33, 0.5*B],
-    [659.25, 1.5*B], [698.46, 0.5*B], [659.25,    B],
-    [0,      0.5*B], // 休符
-    [523.25, 1.5*B],
-    // フレーズ4：ナチュラルマイナーの自然な下降
-    [493.88,    B],  [392.00, 0.5*B], [440.00, 0.5*B],
-    [493.88, 0.5*B], [493.88, 0.5*B], [440.00,    B],
-    [440.00, 2.5*B],
-    // ── Bセクション（対比） ──
-    // フレーズ5：C5起点でゆったり流れる
-    [523.25, 1.5*B], [587.33, 0.5*B], [523.25,    B],
-    [493.88, 1.5*B], [440.00, 0.5*B], [493.88, 1.5*B],
-    [0,      0.5*B], // 休符
-    // フレーズ6：低音域へ降りて広がり
-    [392.00, 0.5*B], [440.00, 0.5*B], [493.88, 0.5*B], [440.00, 0.5*B],
-    [392.00,    B],  [349.23, 1.5*B], [392.00, 0.5*B],
-    [440.00, 1.5*B],
-    [0,      0.5*B], // 休符
-    // フレーズ7：呼びかけと応答
-    [440.00, 0.5*B], [493.88, 0.5*B], [523.25,    B],
-    [587.33, 1.5*B], [523.25, 0.5*B], [493.88,    B],
-    [0,      0.5*B], // 休符
-    [440.00, 1.5*B],
-    // フレーズ8：G4を混ぜてAセクションへ繋ぐ
-    [493.88,    B],  [523.25, 0.5*B], [493.88, 0.5*B],
-    [440.00, 0.5*B], [392.00, 0.5*B], [440.00,    B],
-    [440.00, 2.5*B],
-  ];
-  const LOOP_DUR = SEQ.reduce((s, [, d]) => s + d, 0);
+  const audioEl = new Audio('月影の序章.mp3');
+  audioEl.loop = true;
+  audioEl.volume = 0;
+  audioEl.preload = 'auto';
 
-  // 三角波 + ローパスフィルター（1音=1オシレーター、クリッピングなし）
-  function synthNote(actx, dest, freq, t, dur) {
-    const d = Math.min(dur * 1.28, 2.4);  // 重なりを増やしてよりレガートに
-    const lpf = actx.createBiquadFilter();
-    const env = actx.createGain();
-    lpf.type = 'lowpass';
-    lpf.frequency.value = 900;   // 高域を抑えて丸みを増す
-    lpf.Q.value = 0.3;
-    for (const cents of [-3, +3]) {
-      const osc = actx.createOscillator();
-      osc.type = 'triangle';
-      osc.frequency.value = freq * Math.pow(2, cents / 1200);
-      osc.connect(lpf);
-      osc.start(t); osc.stop(t + d + 0.05);
-    }
-    env.gain.setValueAtTime(0, t);
-    env.gain.linearRampToValueAtTime(0.38, t + 0.09);  // アタックを90msに延ばす
-    env.gain.setValueAtTime(0.35, t + d * 0.90);       // サステインを長く
-    env.gain.exponentialRampToValueAtTime(0.001, t + d);
-    lpf.connect(env); env.connect(dest);
-  }
-
-  // AudioBuffer → WAV ArrayBuffer（ピーク正規化でクリッピング防止）
-  function toWav(buf) {
-    const d = buf.getChannelData(0), n = d.length, sr = buf.sampleRate;
-    let peak = 0;
-    for (let i = 0; i < n; i++) { const a = Math.abs(d[i]); if (a > peak) peak = a; }
-    const scale = peak > 0.001 ? 0.88 / peak : 1; // ピークを0.88に正規化
-    const ab = new ArrayBuffer(44 + n * 2), v = new DataView(ab);
-    const ws = (o, s) => [...s].forEach((c, i) => v.setUint8(o+i, c.charCodeAt(0)));
-    ws(0,'RIFF'); v.setUint32(4, 36+n*2, true); ws(8,'WAVE');
-    ws(12,'fmt '); v.setUint32(16,16,true); v.setUint16(20,1,true);
-    v.setUint16(22,1,true); v.setUint32(24,sr,true); v.setUint32(28,sr*2,true);
-    v.setUint16(32,2,true); v.setUint16(34,16,true);
-    ws(36,'data'); v.setUint32(40,n*2,true);
-    for (let i = 0; i < n; i++) {
-      const s = Math.max(-1, Math.min(1, d[i] * scale));
-      v.setInt16(44+i*2, s < 0 ? s*0x8000 : s*0x7FFF, true);
-    }
-    return ab;
-  }
-
-  // ページ読み込み時に音声を事前レンダリングして <audio> 要素に設定
-  (async () => {
-    const OffCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-    if (!OffCtx) return;
-    try {
-      const off = new OffCtx(1, Math.ceil(44100 * LOOP_DUR), 44100);
-
-      // ディレイ系リバーブ（空間感を出す）
-      const dry = off.createGain();  dry.gain.value = 0.95;
-      const wet = off.createGain();  wet.gain.value = 0.02;
-      const dly = off.createDelay(0.6); dly.delayTime.value = 0.32;
-      const fb  = off.createGain();  fb.gain.value  = 0.08;
-      dry.connect(off.destination);   // ドライ信号 → 出力
-      dry.connect(dly);               // ドライ信号 → ディレイへ送る
-      dly.connect(fb); fb.connect(dly);             // フィードバックループ
-      dly.connect(wet); wet.connect(off.destination); // ウェット信号 → 出力
-
-      let t = 0;
-      for (const [freq, dur] of SEQ) {
-        if (freq > 0) synthNote(off, dry, freq * TRANSPOSE, t, dur);
-        t += dur;
-      }
-      const rendered = await off.startRendering();
-      const url = URL.createObjectURL(new Blob([toWav(rendered)], { type: 'audio/wav' }));
-      audioEl = new Audio(url);
-      audioEl.loop = true;   // デスクトップ向け
-      audioEl.volume = 0;
-      // iOS Safari は Blob URL の loop が効かない場合があるため手動ループ
-      audioEl.addEventListener('ended', () => {
-        if (!looping) return;           // stop() 後は再起動しない
-        if (!audioEl.paused) return;    // loop=true が効いている場合は何もしない
-        audioEl.currentTime = 0;
-        audioEl.play().catch(() => {});
-      });
-    } catch(e) {}
-  })();
+  // iOS Safari は loop が効かない場合があるため手動ループ
+  audioEl.addEventListener('ended', () => {
+    if (!looping) return;
+    audioEl.currentTime = 0;
+    audioEl.play().catch(() => {});
+  });
 
   function fadeTo(target, ms) {
-    if (!audioEl) return;
     if (fadeTimer) clearInterval(fadeTimer);
     const step = (target - audioEl.volume) / (ms / 80);
     fadeTimer = setInterval(() => {
@@ -1165,16 +1053,12 @@ const bgm = (() => {
   }
 
   return {
-    // iOS: ユーザージェスチャーの onclick から同期的に呼ぶこと
     unlock() {
-      if (!audioEl) return;
-      // volume=0 のまま play() してロック解除。pause() はしない（start() と競合するため）
       audioEl.play().catch(() => {});
     },
     start() {
       looping = true;
       if (!document.getElementById('bgmToggle').checked) return;
-      if (!audioEl) return;
       audioEl.loop = true;
       audioEl.currentTime = 0;
       audioEl.volume = 0;
@@ -1183,11 +1067,9 @@ const bgm = (() => {
     },
     stop() {
       looping = false;
-      if (audioEl) audioEl.loop = false;
+      audioEl.loop = false;
       fadeTo(0, 1500);
-      // iOS Safari は volume 変更が効かず fadeTo が pause() に到達しないため
-      // タイムアウトで直接 pause() を呼ぶ
-      setTimeout(() => { if (audioEl && !looping) audioEl.pause(); }, 1600);
+      setTimeout(() => { if (!looping) audioEl.pause(); }, 1600);
     },
   };
 })();
