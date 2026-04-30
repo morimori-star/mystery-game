@@ -1038,7 +1038,7 @@ const bgm = (() => {
 
   // チェレスタ風合成: 鋭い立ち上がり + 倍音ごとに異なる減衰速度 + わずかな非整数倍音
   function synthNote(actx, dest, freq, t, dur) {
-    const d = Math.min(dur * 0.88, 2.8);
+    const d = Math.min(dur * 2.5, 4.5);  // 音符の間隔より長く減衰させ、音をつなげる
     // [倍率, 振幅, 減衰の速さ（大きいほど速く消える）]
     for (const [mult, amp, dk] of [
       [1,    0.42, 1.0],   // 基音: ゆっくり減衰
@@ -1081,10 +1081,10 @@ const bgm = (() => {
       const off = new OffCtx(1, Math.ceil(44100 * LOOP_DUR), 44100);
 
       // ディレイ系リバーブ（空間感を出す）
-      const dry = off.createGain();  dry.gain.value = 0.75;
-      const wet = off.createGain();  wet.gain.value = 0.28;
-      const dly = off.createDelay(0.6); dly.delayTime.value = 0.28;
-      const fb  = off.createGain();  fb.gain.value  = 0.22;
+      const dry = off.createGain();  dry.gain.value = 0.80;
+      const wet = off.createGain();  wet.gain.value = 0.10;
+      const dly = off.createDelay(0.6); dly.delayTime.value = 0.32;
+      const fb  = off.createGain();  fb.gain.value  = 0.18;
       dry.connect(off.destination);   // ドライ信号 → 出力
       dry.connect(dly);               // ドライ信号 → ディレイへ送る
       dly.connect(fb); fb.connect(dly);             // フィードバックループ
