@@ -775,6 +775,12 @@ ${blueprint}
 - 他の容疑者も独立した動機と怪しい言動を持たせる
 - 誰かを「容疑者から外れる」ように書かない
 
+■ 手がかりを埋め込む
+- 犯人につながる具体的な手がかりを2〜3個、ストーリーの中に自然に混ぜ込む
+- 手がかりは目立たせず、他の事実と並べて淡々と記述する（「これが重要だ」と強調しない）
+- ただし注意深く読んだり質問で掘り下げれば意味がわかる程度の具体性を持たせる
+- 例: 証言の微妙な矛盾、場所・時刻の不一致、不自然な行動、現場に残った痕跡
+
 ■ 文体
 - 新聞記事・捜査報告書・探偵小説の「謎の提示部分」のような文体で書く
 - 登場人物は4〜6人（被害者含む）
@@ -885,7 +891,7 @@ async function askQuestion() {
       state.qaHistory.map((qa, i) => `Q${i+1}: ${qa.q}\nA${i+1}: ${qa.a}`).join('\n\n')
     : '';
 
-  const systemPrompt = `あなたは推理ゲームの進行役「語り部」です。落ち着いた丁寧なですます調で話してください（「〜ですね」「〜でしょう」「〜ました」など自然な敬語）。
+  const systemPrompt = `あなたは推理ゲームの進行役です。自然なですます調で、さらりと話してください。「〜ですな」「〜ですぞ」「〜ましょうぞ」「心より敬意を」「核心に迫る」「ふむ」などの仰々しい・時代劇的な表現は使わないこと。普通の会話のように、落ち着いて簡潔に答えてください。
 
 以下の事件の全真相を知っています。
 
@@ -975,7 +981,7 @@ async function makeGuess() {
     ? `プレイヤーの指名：${guessName}（正解）`
     : `プレイヤーの指名：${guessName}（不正解。真犯人は${state.culprit}）`;
 
-  const systemPrompt = `あなたは推理ゲームの進行役「語り部」です。落ち着いた丁寧なですます調で話してください（「〜ですね」「〜でしょう」「〜ました」など自然な敬語）。プレイヤーが犯人を指名したので、真相を解説してください。
+  const systemPrompt = `あなたは推理ゲームの進行役です。自然なですます調で、さらりと話してください。「〜ですな」「〜ですぞ」「〜ましょうぞ」「心より敬意を」「核心に迫る」「ふむ」などの仰々しい・時代劇的な表現は使わないこと。普通の会話のように、落ち着いて簡潔に答えてください。プレイヤーが犯人を指名したので、真相を解説してください。
 
 【事件概要】
 ${state.story}
@@ -1015,32 +1021,18 @@ function resetGame() {
   document.getElementById('startBtn').disabled = false;
 }
 
-// ===== BGM (Web Audio API) =====
+// ===== BGM (Web Audio API — look-ahead scheduler) =====
 const bgm = (() => {
-  let ctx = null, master = null, loopTimer = null;
+  let ctx = null, master = null, ticker = null, playing = false;
+  let noteIdx = 0, nextNoteTime = 0;
 
-  // C minor, 76 BPM
-  const BPM = 76, B = 60 / BPM;
-
-  // Frequencies
-  const G2=98.00, D3=146.83, Eb3=155.56, F3=174.61,
-        G3=196.00, Ab3=207.65, Bb3=233.08,
-        C4=261.63, D4=293.66, Eb4=311.13, F4=349.23,
-        G4=392.00, Ab4=415.30, Bb4=466.16, C5=523.25;
-
-  // Melody: [freq, beats, volume]  — 4 bars × 4 beats = 16 beats
-  const MELODY = [
-    [G4, 2.0, 0.20], [Eb4, 1.0, 0.16], [F4, 1.0, 0.16],
-    [G4, 1.0, 0.18], [C5, 1.5, 0.22], [Bb4, 0.5, 0.16], [Ab4, 1.0, 0.16],
-    [G4, 2.0, 0.20], [F4, 1.0, 0.16], [Eb4, 1.0, 0.16],
-    [D4, 1.0, 0.16], [Eb4, 1.0, 0.16], [C4, 2.0, 0.20],
-  ];
-
-  // Pads: [freqs, start_beat, dur_beats, vol]
-  const PADS = [
-    [[G2, Eb3, G3],   0,  8, 0.055],  // Cm
-    [[G2, Eb3, Ab3],  8,  4, 0.055],  // Ab
-    [[G2, D3,  F3],  12,  4, 0.055],  // G7
+  // C minor, 76 BPM — melody as [freq_hz, duration_sec]
+  const B = 60 / 76;
+  const SEQ = [
+    [392.00, 2*B], [311.13, B],   [349.23, B],
+    [392.00, B],   [523.25, 1.5*B],[466.16, 0.5*B],[415.30, B],
+    [392.00, 2*B], [349.23, B],   [311.13, B],
+    [293.66, B],   [311.13, B],   [261.63, 2*B],
   ];
 
   function getCtx() {
@@ -1048,48 +1040,52 @@ const bgm = (() => {
     return ctx;
   }
 
-  function note(freq, t0, dur, type, vol) {
+  function scheduleNote(freq, t, dur) {
     const c = getCtx();
     const osc = c.createOscillator();
-    const g   = c.createGain();
-    osc.type = type;
+    const env = c.createGain();
+    osc.type = 'triangle';
     osc.frequency.value = freq;
-    const att = 0.07, rel = Math.min(0.45, dur * 0.3);
-    g.gain.setValueAtTime(0, t0);
-    g.gain.linearRampToValueAtTime(vol, t0 + att);
-    g.gain.setValueAtTime(vol, t0 + dur - rel);
-    g.gain.linearRampToValueAtTime(0, t0 + dur);
-    osc.connect(g);
-    g.connect(master);
-    osc.start(t0);
-    osc.stop(t0 + dur + 0.05);
+    env.gain.setValueAtTime(0, t);
+    env.gain.linearRampToValueAtTime(0.22, t + 0.06);
+    env.gain.setValueAtTime(0.22, t + dur * 0.75);
+    env.gain.linearRampToValueAtTime(0, t + dur);
+    osc.connect(env);
+    env.connect(master);
+    osc.start(t);
+    osc.stop(t + dur + 0.02);
   }
 
-  function scheduleLoop(t0) {
-    if (!master) return;
+  function tick() {
+    if (!playing || !master) return;
     const c = getCtx();
-    let t = t0;
-    for (const [f, beats, vol] of MELODY) {
-      note(f, t, beats * B * 0.87, 'triangle', vol);
-      t += beats * B;
+    const lookahead = 0.18;
+    while (nextNoteTime < c.currentTime + lookahead) {
+      const [freq, dur] = SEQ[noteIdx % SEQ.length];
+      scheduleNote(freq, nextNoteTime, dur * 0.88);
+      nextNoteTime += dur;
+      noteIdx++;
     }
-    const loopLen = 16 * B;
-    for (const [freqs, sb, db, vol] of PADS) {
-      for (const f of freqs) note(f, t0 + sb * B, db * B, 'sine', vol);
-    }
-    loopTimer = setTimeout(() => scheduleLoop(c.currentTime + 0.15), (loopLen - 0.4) * 1000);
+    ticker = setTimeout(tick, 80);
+  }
+
+  function doStart() {
+    const c = getCtx();
+    nextNoteTime = c.currentTime + 0.05;
+    noteIdx = 0;
+    tick();
   }
 
   return {
     start() {
       if (!document.getElementById('bgmToggle').checked) return;
-      if (master) return;
+      if (playing) return;
+      playing = true;
       const c = getCtx();
       master = c.createGain();
       master.gain.setValueAtTime(0, c.currentTime);
-      master.gain.linearRampToValueAtTime(0.75, c.currentTime + 2.5);
+      master.gain.linearRampToValueAtTime(0.7, c.currentTime + 2.5);
       master.connect(c.destination);
-      const doStart = () => scheduleLoop(c.currentTime + 0.1);
       if (c.state === 'suspended') {
         c.resume().then(doStart);
       } else {
@@ -1097,13 +1093,15 @@ const bgm = (() => {
       }
     },
     stop() {
-      if (loopTimer) { clearTimeout(loopTimer); loopTimer = null; }
+      playing = false;
+      if (ticker) { clearTimeout(ticker); ticker = null; }
       if (master && ctx) {
         const m = master; master = null;
-        m.gain.cancelScheduledValues(ctx.currentTime);
-        m.gain.setValueAtTime(m.gain.value, ctx.currentTime);
-        m.gain.linearRampToValueAtTime(0, ctx.currentTime + 1.8);
-        setTimeout(() => { try { m.disconnect(); } catch(e) {} }, 2200);
+        const t = ctx.currentTime;
+        m.gain.cancelScheduledValues(t);
+        m.gain.setValueAtTime(m.gain.value, t);
+        m.gain.linearRampToValueAtTime(0, t + 1.5);
+        setTimeout(() => { try { m.disconnect(); } catch(e) {} }, 2000);
       }
     },
   };
