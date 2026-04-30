@@ -1036,18 +1036,23 @@ const bgm = (() => {
   ];
   const LOOP_DUR = SEQ.reduce((s, [, d]) => s + d, 0);
 
-  // バイブラフォン風合成（基音 + デチューン + 第2倍音）
+  // チェレスタ風合成: 鋭い立ち上がり + 倍音ごとに異なる減衰速度 + わずかな非整数倍音
   function synthNote(actx, dest, freq, t, dur) {
-    for (const [f, v] of [[freq, 0.28], [freq*1.004, 0.22], [freq*2, 0.06]]) {
+    const d = Math.min(dur * 0.88, 2.8);
+    // [倍率, 振幅, 減衰の速さ（大きいほど速く消える）]
+    for (const [mult, amp, dk] of [
+      [1,    0.42, 1.0],   // 基音: ゆっくり減衰
+      [2,    0.18, 2.2],   // 第2倍音: やや速く
+      [3,    0.09, 3.5],   // 第3倍音: 速く
+      [4.18, 0.04, 5.0],   // 非整数倍音（金属的な響き）
+    ]) {
       const osc = actx.createOscillator(), env = actx.createGain();
-      osc.type = 'sine'; osc.frequency.value = f;
+      osc.type = 'sine'; osc.frequency.value = freq * mult;
       env.gain.setValueAtTime(0, t);
-      env.gain.linearRampToValueAtTime(v, t + 0.012);
-      env.gain.exponentialRampToValueAtTime(v * 0.35, t + dur * 0.65);
-      env.gain.exponentialRampToValueAtTime(0.0001, t + dur * 0.96);
-      env.gain.setValueAtTime(0, t + dur);
+      env.gain.linearRampToValueAtTime(amp, t + 0.006);
+      env.gain.exponentialRampToValueAtTime(0.0001, t + d / dk);
       osc.connect(env); env.connect(dest);
-      osc.start(t); osc.stop(t + dur + 0.05);
+      osc.start(t); osc.stop(t + d / dk + 0.05);
     }
   }
 
@@ -1074,8 +1079,22 @@ const bgm = (() => {
     if (!OffCtx) return;
     try {
       const off = new OffCtx(1, Math.ceil(44100 * LOOP_DUR), 44100);
+
+      // ディレイ系リバーブ（空間感を出す）
+      const dry = off.createGain();  dry.gain.value = 0.75;
+      const wet = off.createGain();  wet.gain.value = 0.28;
+      const dly = off.createDelay(0.6); dly.delayTime.value = 0.28;
+      const fb  = off.createGain();  fb.gain.value  = 0.22;
+      dry.connect(off.destination);   // ドライ信号 → 出力
+      dry.connect(dly);               // ドライ信号 → ディレイへ送る
+      dly.connect(fb); fb.connect(dly);             // フィードバックループ
+      dly.connect(wet); wet.connect(off.destination); // ウェット信号 → 出力
+
       let t = 0;
-      for (const [freq, dur] of SEQ) { synthNote(off, off.destination, freq, t, dur * 0.9); t += dur; }
+      for (const [freq, dur] of SEQ) {
+        synthNote(off, dry, freq, t, dur);
+        t += dur;
+      }
       const rendered = await off.startRendering();
       const url = URL.createObjectURL(new Blob([toWav(rendered)], { type: 'audio/wav' }));
       audioEl = new Audio(url);
@@ -1102,13 +1121,12 @@ const bgm = (() => {
     // iOS: ユーザージェスチャーの onclick から同期的に呼ぶこと
     unlock() {
       if (!audioEl) return;
-      // <audio> 要素を一度 play() して即 pause() → iOS のロック解除
-      audioEl.play().then(() => audioEl.pause()).catch(() => {});
+      // volume=0 のまま play() してロック解除。pause() はしない（start() と競合するため）
+      audioEl.play().catch(() => {});
     },
     start() {
       if (!document.getElementById('bgmToggle').checked) return;
       if (!audioEl) return;
-      audioEl.currentTime = 0;
       audioEl.volume = 0;
       audioEl.play().catch(() => {});
       fadeTo(0.75, 2500);
