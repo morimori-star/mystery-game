@@ -1036,23 +1036,38 @@ const bgm = (() => {
   ];
   const LOOP_DUR = SEQ.reduce((s, [, d]) => s + d, 0);
 
-  // チェレスタ風合成: 鋭い立ち上がり + 倍音ごとに異なる減衰速度 + わずかな非整数倍音
+  // オーボエ風合成: 奇数倍音強め + ゆっくりした立ち上がり + ローパス + ビブラート
   function synthNote(actx, dest, freq, t, dur) {
-    const d = Math.min(dur * 2.5, 4.5);  // 音符の間隔より長く減衰させ、音をつなげる
-    // [倍率, 振幅, 減衰の速さ（大きいほど速く消える）]
-    for (const [mult, amp, dk] of [
-      [1,    0.42, 1.0],   // 基音: ゆっくり減衰
-      [2,    0.18, 2.2],   // 第2倍音: やや速く
-      [3,    0.09, 3.5],   // 第3倍音: 速く
-      [4.18, 0.04, 5.0],   // 非整数倍音（金属的な響き）
+    const d = Math.min(dur * 2.5, 4.5);
+
+    // ローパスフィルターで高域を丸めて柔らかく
+    const lpf = actx.createBiquadFilter();
+    lpf.type = 'lowpass';
+    lpf.frequency.value = 1600;
+    lpf.Q.value = 0.6;
+    lpf.connect(dest);
+
+    // ビブラートLFO（全倍音で共有）
+    const lfo = actx.createOscillator();
+    lfo.type = 'sine'; lfo.frequency.value = 5.5;
+    lfo.start(t + 0.1); lfo.stop(t + d + 0.1);
+
+    // [倍率, 振幅] — 奇数倍音（3, 5）を強調してオーボエらしく
+    for (const [mult, amp] of [
+      [1, 0.35], [2, 0.18], [3, 0.26], [4, 0.09], [5, 0.14], [6, 0.04],
     ]) {
       const osc = actx.createOscillator(), env = actx.createGain();
       osc.type = 'sine'; osc.frequency.value = freq * mult;
+      // ビブラートをこの倍音に適用
+      const vibG = actx.createGain(); vibG.gain.value = freq * mult * 0.003;
+      lfo.connect(vibG); vibG.connect(osc.frequency);
+      // エンベロープ: ゆっくり立ち上がり → サステイン → 消える
       env.gain.setValueAtTime(0, t);
-      env.gain.linearRampToValueAtTime(amp, t + 0.006);
-      env.gain.exponentialRampToValueAtTime(0.0001, t + d / dk);
-      osc.connect(env); env.connect(dest);
-      osc.start(t); osc.stop(t + d / dk + 0.05);
+      env.gain.linearRampToValueAtTime(amp, t + 0.08);
+      env.gain.setValueAtTime(amp, t + d * 0.82);
+      env.gain.exponentialRampToValueAtTime(0.0001, t + d);
+      osc.connect(env); env.connect(lpf);
+      osc.start(t); osc.stop(t + d + 0.05);
     }
   }
 
@@ -1081,8 +1096,8 @@ const bgm = (() => {
       const off = new OffCtx(1, Math.ceil(44100 * LOOP_DUR), 44100);
 
       // ディレイ系リバーブ（空間感を出す）
-      const dry = off.createGain();  dry.gain.value = 0.80;
-      const wet = off.createGain();  wet.gain.value = 0.10;
+      const dry = off.createGain();  dry.gain.value = 0.85;
+      const wet = off.createGain();  wet.gain.value = 0.05;
       const dly = off.createDelay(0.6); dly.delayTime.value = 0.32;
       const fb  = off.createGain();  fb.gain.value  = 0.18;
       dry.connect(off.destination);   // ドライ信号 → 出力
