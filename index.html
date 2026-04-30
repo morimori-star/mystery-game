@@ -1028,41 +1028,37 @@ const bgm = (() => {
   let fadeTimer = null;
   let looping = false;
 
-  const B = 60 / 128;
+  const B = 60 / 148;
   const SEQ = [
-    // フレーズ1：半音＋跳躍で不穏な開幕
-    [440.00,    B], [466.16, 0.5*B], [493.88, 0.5*B],
-    [523.25,    B], [659.25,    B],  [554.37, 0.5*B],
-    [587.33, 0.5*B],[523.25,  2*B],
-    // フレーズ2：ハーモニックマイナーの緊張感ある下降
-    [659.25,    B], [698.46, 0.5*B], [659.25, 0.5*B],
-    [587.33,    B], [523.25,    B],  [493.88,    B],
-    [415.30,  2*B],
-    // フレーズ3：跳躍＋トリトーンで不安感を高める
-    [440.00, 0.5*B],[659.25, 0.5*B],
-    [698.46,    B], [659.25,    B],  [554.37, 0.5*B],
-    [587.33, 0.5*B],[523.25,    B],  [466.16,    B],
-    // フレーズ4：半音下降で締め
-    [493.88, 0.5*B],[466.16, 0.5*B],
-    [440.00,    B], [415.30, 0.5*B], [440.00, 0.5*B],
-    [493.88,    B], [440.00, 2.5*B],
+    // フレーズ1：スケール上昇（なめらか）
+    [440.00,    B], [493.88,    B], [523.25,    B], [587.33,    B],
+    [659.25,    B], [587.33,    B], [523.25,    B], [493.88, 2*B],
+    // フレーズ2：F5まで上昇して解放感
+    [523.25,    B], [587.33,    B], [659.25,    B], [698.46,    B],
+    [659.25,    B], [523.25, 2*B],
+    // フレーズ3：C#5（トリトーン）を絡めた緊張フレーズ
+    [493.88,    B], [523.25,    B], [587.33,    B], [554.37,    B],
+    [587.33,    B], [659.25,    B], [698.46,    B], [659.25, 2*B],
+    // フレーズ4：ハーモニックマイナー下降で締め
+    [587.33,    B], [523.25,    B], [493.88,    B], [415.30,    B],
+    [440.00, 3*B],
   ];
   const LOOP_DUR = SEQ.reduce((s, [, d]) => s + d, 0);
 
   // 三角波 + ローパスフィルター（1音=1オシレーター、クリッピングなし）
   function synthNote(actx, dest, freq, t, dur) {
-    const d = Math.min(dur * 0.82, 1.4);  // アップテンポ向けに短めにカット
+    const d = Math.min(dur * 1.08, 2.0);  // 隣の音と少し重ねてレガートに
     const osc = actx.createOscillator();
     const lpf = actx.createBiquadFilter();
     const env = actx.createGain();
     osc.type = 'triangle';
     osc.frequency.value = freq;
     lpf.type = 'lowpass';
-    lpf.frequency.value = 900;
-    lpf.Q.value = 0.5;
+    lpf.frequency.value = 1100;  // 少し明るめに開く
+    lpf.Q.value = 0.4;
     env.gain.setValueAtTime(0, t);
-    env.gain.linearRampToValueAtTime(0.55, t + 0.04);   // 40ms で素早く立ち上がり
-    env.gain.setValueAtTime(0.50, t + d * 0.75);
+    env.gain.linearRampToValueAtTime(0.50, t + 0.06);
+    env.gain.setValueAtTime(0.46, t + d * 0.85);  // サステインを長く
     env.gain.exponentialRampToValueAtTime(0.001, t + d);
     osc.connect(lpf); lpf.connect(env); env.connect(dest);
     osc.start(t); osc.stop(t + d + 0.05);
