@@ -1183,8 +1183,11 @@ const bgm = (() => {
     },
     stop() {
       looping = false;
-      if (audioEl) audioEl.loop = false;  // iOS: loop プロパティも明示的に無効化
+      if (audioEl) audioEl.loop = false;
       fadeTo(0, 1500);
+      // iOS Safari は volume 変更が効かず fadeTo が pause() に到達しないため
+      // タイムアウトで直接 pause() を呼ぶ
+      setTimeout(() => { if (audioEl && !looping) audioEl.pause(); }, 1600);
     },
   };
 })();
