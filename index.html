@@ -1029,6 +1029,7 @@ const bgm = (() => {
   let looping = false;
 
   const B = 60 / 148;
+  const TRANSPOSE = Math.pow(2, -5 / 12); // 5半音下（完全4度）
   const SEQ = [
     // フレーズ1：付点リズムでスキップするような弾み
     [440.00, 1.5*B], [493.88, 0.5*B], [523.25,    B],
@@ -1113,7 +1114,7 @@ const bgm = (() => {
 
       let t = 0;
       for (const [freq, dur] of SEQ) {
-        if (freq > 0) synthNote(off, dry, freq, t, dur);
+        if (freq > 0) synthNote(off, dry, freq * TRANSPOSE, t, dur);
         t += dur;
       }
       const rendered = await off.startRendering();
