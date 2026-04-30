@@ -1036,44 +1036,31 @@ const bgm = (() => {
   ];
   const LOOP_DUR = SEQ.reduce((s, [, d]) => s + d, 0);
 
-  // オーボエ風合成: 奇数倍音強め + ゆっくりした立ち上がり + ローパス + ビブラート
+  // 三角波 + ローパスフィルター（1音=1オシレーター、クリッピングなし）
   function synthNote(actx, dest, freq, t, dur) {
-    const d = Math.min(dur * 2.5, 4.5);
-
-    // ローパスフィルターで高域を丸めて柔らかく
+    const d = Math.min(dur * 1.8, 3.2);
+    const osc = actx.createOscillator();
     const lpf = actx.createBiquadFilter();
+    const env = actx.createGain();
+    osc.type = 'triangle';       // 奇数倍音のみ・自然に柔らかい
+    osc.frequency.value = freq;
     lpf.type = 'lowpass';
-    lpf.frequency.value = 1600;
-    lpf.Q.value = 0.6;
-    lpf.connect(dest);
-
-    // ビブラートLFO（全倍音で共有）
-    const lfo = actx.createOscillator();
-    lfo.type = 'sine'; lfo.frequency.value = 5.5;
-    lfo.start(t + 0.1); lfo.stop(t + d + 0.1);
-
-    // [倍率, 振幅] — 奇数倍音（3, 5）を強調してオーボエらしく
-    for (const [mult, amp] of [
-      [1, 0.35], [2, 0.18], [3, 0.26], [4, 0.09], [5, 0.14], [6, 0.04],
-    ]) {
-      const osc = actx.createOscillator(), env = actx.createGain();
-      osc.type = 'sine'; osc.frequency.value = freq * mult;
-      // ビブラートをこの倍音に適用
-      const vibG = actx.createGain(); vibG.gain.value = freq * mult * 0.003;
-      lfo.connect(vibG); vibG.connect(osc.frequency);
-      // エンベロープ: ゆっくり立ち上がり → サステイン → 消える
-      env.gain.setValueAtTime(0, t);
-      env.gain.linearRampToValueAtTime(amp, t + 0.08);
-      env.gain.setValueAtTime(amp, t + d * 0.82);
-      env.gain.exponentialRampToValueAtTime(0.0001, t + d);
-      osc.connect(env); env.connect(lpf);
-      osc.start(t); osc.stop(t + d + 0.05);
-    }
+    lpf.frequency.value = 900;   // 高域カットで丸みを出す
+    lpf.Q.value = 0.5;
+    env.gain.setValueAtTime(0, t);
+    env.gain.linearRampToValueAtTime(0.55, t + 0.08);   // 80ms でゆっくり立ち上がり
+    env.gain.setValueAtTime(0.50, t + d * 0.80);
+    env.gain.exponentialRampToValueAtTime(0.001, t + d);
+    osc.connect(lpf); lpf.connect(env); env.connect(dest);
+    osc.start(t); osc.stop(t + d + 0.05);
   }
 
-  // AudioBuffer → WAV ArrayBuffer
+  // AudioBuffer → WAV ArrayBuffer（ピーク正規化でクリッピング防止）
   function toWav(buf) {
     const d = buf.getChannelData(0), n = d.length, sr = buf.sampleRate;
+    let peak = 0;
+    for (let i = 0; i < n; i++) { const a = Math.abs(d[i]); if (a > peak) peak = a; }
+    const scale = peak > 0.001 ? 0.88 / peak : 1; // ピークを0.88に正規化
     const ab = new ArrayBuffer(44 + n * 2), v = new DataView(ab);
     const ws = (o, s) => [...s].forEach((c, i) => v.setUint8(o+i, c.charCodeAt(0)));
     ws(0,'RIFF'); v.setUint32(4, 36+n*2, true); ws(8,'WAVE');
@@ -1081,8 +1068,8 @@ const bgm = (() => {
     v.setUint16(22,1,true); v.setUint32(24,sr,true); v.setUint32(28,sr*2,true);
     v.setUint16(32,2,true); v.setUint16(34,16,true);
     ws(36,'data'); v.setUint32(40,n*2,true);
-    for (let i=0; i<n; i++) {
-      const s = Math.max(-1, Math.min(1, d[i]));
+    for (let i = 0; i < n; i++) {
+      const s = Math.max(-1, Math.min(1, d[i] * scale));
       v.setInt16(44+i*2, s < 0 ? s*0x8000 : s*0x7FFF, true);
     }
     return ab;
