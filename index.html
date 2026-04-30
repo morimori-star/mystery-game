@@ -1098,8 +1098,14 @@ const bgm = (() => {
       const rendered = await off.startRendering();
       const url = URL.createObjectURL(new Blob([toWav(rendered)], { type: 'audio/wav' }));
       audioEl = new Audio(url);
-      audioEl.loop = true;
+      audioEl.loop = true;   // デスクトップ向け
       audioEl.volume = 0;
+      // iOS Safari は Blob URL の loop が効かない場合があるため手動ループ
+      audioEl.addEventListener('ended', () => {
+        if (!audioEl.paused) return; // loop=true が効いた場合は何もしない
+        audioEl.currentTime = 0;
+        audioEl.play().catch(() => {});
+      });
     } catch(e) {}
   })();
 
