@@ -1038,24 +1038,37 @@ const bgm = (() => {
   ];
   const LOOP_DUR = SEQ.reduce((s, [, d]) => s + d, 0);
 
+  // バイブラフォン風合成: サイン波（基音）+ 微妙にデチューンした同音（コーラス）+ 第2倍音
+  function synthNote(audioCtx, dest, freq, t, dur) {
+    const partials = [
+      [freq,        0.28],   // 基音
+      [freq * 1.004, 0.22],  // わずかなデチューン（コーラス感）
+      [freq * 2,    0.06],   // 第2倍音（明るさを加える）
+    ];
+    for (const [f, v] of partials) {
+      const osc = audioCtx.createOscillator();
+      const env = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = f;
+      env.gain.setValueAtTime(0, t);
+      env.gain.linearRampToValueAtTime(v, t + 0.012);          // 速い立ち上がり
+      env.gain.exponentialRampToValueAtTime(v * 0.35, t + dur * 0.65); // 自然な減衰
+      env.gain.exponentialRampToValueAtTime(0.0001, t + dur * 0.96);
+      env.gain.setValueAtTime(0, t + dur);
+      osc.connect(env); env.connect(dest);
+      osc.start(t); osc.stop(t + dur + 0.05);
+    }
+  }
+
   // ページ読み込み時にバッファを事前生成（ユーザー操作不要）
   const OffCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
   if (OffCtx) {
     (async () => {
       try {
-        const off = new OffCtx(1, Math.ceil(44100 * LOOP_DUR), 44100);
+        const off = new OffCtx(2, Math.ceil(44100 * LOOP_DUR), 44100);
         let t = 0;
         for (const [freq, dur] of SEQ) {
-          const osc = off.createOscillator();
-          const env = off.createGain();
-          osc.type = 'triangle';
-          osc.frequency.value = freq;
-          env.gain.setValueAtTime(0, t);
-          env.gain.linearRampToValueAtTime(0.3, t + 0.06);
-          env.gain.setValueAtTime(0.3, t + dur * 0.78);
-          env.gain.linearRampToValueAtTime(0, t + dur * 0.97);
-          osc.connect(env); env.connect(off.destination);
-          osc.start(t); osc.stop(t + dur);
+          synthNote(off, off.destination, freq, t, dur * 0.9);
           t += dur;
         }
         buffer = await off.startRendering();
@@ -1068,16 +1081,7 @@ const bgm = (() => {
     if (!playing || !ctx || !gainNode) return;
     while (nextNoteTime < ctx.currentTime + 0.2) {
       const [freq, dur] = SEQ[noteIdx % SEQ.length];
-      const osc = ctx.createOscillator();
-      const env = ctx.createGain();
-      osc.type = 'triangle'; osc.frequency.value = freq;
-      const t = nextNoteTime, d = dur * 0.88;
-      env.gain.setValueAtTime(0, t);
-      env.gain.linearRampToValueAtTime(0.25, t + 0.06);
-      env.gain.setValueAtTime(0.25, t + d * 0.78);
-      env.gain.linearRampToValueAtTime(0, t + d);
-      osc.connect(env); env.connect(gainNode);
-      osc.start(t); osc.stop(t + d + 0.02);
+      synthNote(ctx, gainNode, freq, nextNoteTime, dur * 0.9);
       nextNoteTime += dur; noteIdx++;
     }
     ticker = setTimeout(tick, 80);
