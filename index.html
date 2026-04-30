@@ -1026,6 +1026,7 @@ function resetGame() {
 const bgm = (() => {
   let audioEl = null;
   let fadeTimer = null;
+  let looping = false;
 
   const B = 60 / 76;
   const SEQ = [
@@ -1104,7 +1105,8 @@ const bgm = (() => {
       audioEl.volume = 0;
       // iOS Safari は Blob URL の loop が効かない場合があるため手動ループ
       audioEl.addEventListener('ended', () => {
-        if (!audioEl.paused) return; // loop=true が効いた場合は何もしない
+        if (!looping) return;           // stop() 後は再起動しない
+        if (!audioEl.paused) return;    // loop=true が効いている場合は何もしない
         audioEl.currentTime = 0;
         audioEl.play().catch(() => {});
       });
@@ -1133,6 +1135,7 @@ const bgm = (() => {
       audioEl.play().catch(() => {});
     },
     start() {
+      looping = true;
       if (!document.getElementById('bgmToggle').checked) return;
       if (!audioEl) return;
       audioEl.volume = 0;
@@ -1140,6 +1143,7 @@ const bgm = (() => {
       fadeTo(0.75, 2500);
     },
     stop() {
+      looping = false;
       fadeTo(0, 1500);
     },
   };
