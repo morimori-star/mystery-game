@@ -1061,7 +1061,7 @@ const bgm = (() => {
     lpf.frequency.value = 1100;
     lpf.Q.value = 0.4;
     // 2本をわずかにデチューンして重ねる（コーラス効果で音を太く）
-    for (const cents of [-7, +7]) {
+    for (const cents of [-3, +3]) {
       const osc = actx.createOscillator();
       osc.type = 'triangle';
       osc.frequency.value = freq * Math.pow(2, cents / 1200);
