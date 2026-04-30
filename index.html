@@ -179,6 +179,49 @@
     letter-spacing: 0.1em;
   }
 
+  /* BGM toggle */
+  .bgm-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 20px;
+  }
+  .bgm-toggle label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 0.78rem;
+    color: #aaa;
+    user-select: none;
+    letter-spacing: 0.08em;
+  }
+  .bgm-toggle input { display: none; }
+  .bgm-switch {
+    width: 36px;
+    height: 20px;
+    background: #ccc;
+    border-radius: 10px;
+    position: relative;
+    transition: background 0.2s;
+    flex-shrink: 0;
+  }
+  .bgm-switch::after {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    background: #fff;
+    border-radius: 50%;
+    top: 2px;
+    left: 2px;
+    transition: left 0.2s;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+  }
+  .bgm-toggle input:checked + .bgm-switch { background: #7a4e1e; }
+  .bgm-toggle input:checked + .bgm-switch::after { left: 18px; }
+
   /* Story screen */
   #storyScreen { display: none; }
 
@@ -479,6 +522,13 @@
       3つの質問で真実を暴け。
     </p>
     <button class="btn-primary" id="startBtn" onclick="startGame()">ゲーム開始</button>
+    <div class="bgm-toggle">
+      <label>
+        <input type="checkbox" id="bgmToggle" checked>
+        <span class="bgm-switch"></span>
+        BGM
+      </label>
+    </div>
     <div class="error-msg" id="startError"></div>
   </div>
 
@@ -649,6 +699,7 @@ async function startGame() {
 
   document.getElementById('startBtn').disabled = true;
   show('loadingScreen');
+  bgm.start();
 
   const theme = getRandomTheme();
 
@@ -763,8 +814,10 @@ ${blueprint}
     state.qaHistory = [];
 
     renderStoryScreen();
+    bgm.stop();
     show('storyScreen');
   } catch (e) {
+    bgm.stop();
     show('startScreen');
     showError('startError', e.message);
   } finally {
@@ -964,6 +1017,100 @@ function resetGame() {
   show('startScreen');
   document.getElementById('startBtn').disabled = false;
 }
+
+// ===== BGM (Web Audio API) =====
+const bgm = (() => {
+  let ctx = null, master = null, loopTimer = null;
+
+  // C minor, 76 BPM
+  const BPM = 76, B = 60 / BPM;
+
+  // Frequencies
+  const G2=98.00, D3=146.83, Eb3=155.56, F3=174.61,
+        G3=196.00, Ab3=207.65, Bb3=233.08,
+        C4=261.63, D4=293.66, Eb4=311.13, F4=349.23,
+        G4=392.00, Ab4=415.30, Bb4=466.16, C5=523.25;
+
+  // Melody: [freq, beats, volume]  — 4 bars × 4 beats = 16 beats
+  const MELODY = [
+    [G4, 2.0, 0.20], [Eb4, 1.0, 0.16], [F4, 1.0, 0.16],
+    [G4, 1.0, 0.18], [C5, 1.5, 0.22], [Bb4, 0.5, 0.16], [Ab4, 1.0, 0.16],
+    [G4, 2.0, 0.20], [F4, 1.0, 0.16], [Eb4, 1.0, 0.16],
+    [D4, 1.0, 0.16], [Eb4, 1.0, 0.16], [C4, 2.0, 0.20],
+  ];
+
+  // Pads: [freqs, start_beat, dur_beats, vol]
+  const PADS = [
+    [[G2, Eb3, G3],   0,  8, 0.055],  // Cm
+    [[G2, Eb3, Ab3],  8,  4, 0.055],  // Ab
+    [[G2, D3,  F3],  12,  4, 0.055],  // G7
+  ];
+
+  function getCtx() {
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    return ctx;
+  }
+
+  function note(freq, t0, dur, type, vol) {
+    const c = getCtx();
+    const osc = c.createOscillator();
+    const g   = c.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    const att = 0.07, rel = Math.min(0.45, dur * 0.3);
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(vol, t0 + att);
+    g.gain.setValueAtTime(vol, t0 + dur - rel);
+    g.gain.linearRampToValueAtTime(0, t0 + dur);
+    osc.connect(g);
+    g.connect(master);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.05);
+  }
+
+  function scheduleLoop(t0) {
+    if (!master) return;
+    const c = getCtx();
+    let t = t0;
+    for (const [f, beats, vol] of MELODY) {
+      note(f, t, beats * B * 0.87, 'triangle', vol);
+      t += beats * B;
+    }
+    const loopLen = 16 * B;
+    for (const [freqs, sb, db, vol] of PADS) {
+      for (const f of freqs) note(f, t0 + sb * B, db * B, 'sine', vol);
+    }
+    loopTimer = setTimeout(() => scheduleLoop(c.currentTime + 0.15), (loopLen - 0.4) * 1000);
+  }
+
+  return {
+    start() {
+      if (!document.getElementById('bgmToggle').checked) return;
+      const c = getCtx();
+      if (c.state === 'suspended') c.resume();
+      if (master) return;
+      master = c.createGain();
+      master.gain.setValueAtTime(0, c.currentTime);
+      master.gain.linearRampToValueAtTime(0.75, c.currentTime + 2.5);
+      master.connect(c.destination);
+      scheduleLoop(c.currentTime + 0.1);
+    },
+    stop() {
+      if (loopTimer) { clearTimeout(loopTimer); loopTimer = null; }
+      if (master && ctx) {
+        const m = master; master = null;
+        m.gain.cancelScheduledValues(ctx.currentTime);
+        m.gain.setValueAtTime(m.gain.value, ctx.currentTime);
+        m.gain.linearRampToValueAtTime(0, ctx.currentTime + 1.8);
+        setTimeout(() => { try { m.disconnect(); } catch(e) {} }, 2200);
+      }
+    },
+  };
+})();
+
+document.getElementById('bgmToggle').addEventListener('change', function() {
+  if (!this.checked) bgm.stop();
+});
 
 function escHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
