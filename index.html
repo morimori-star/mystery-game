@@ -521,7 +521,7 @@
       密室、アリバイ、偽装、そして嘘。<br>
       3つの質問で真実を暴け。
     </p>
-    <button class="btn-primary" id="startBtn" onclick="startGame()">ゲーム開始</button>
+    <button class="btn-primary" id="startBtn" onclick="bgm.unlock(); startGame();">ゲーム開始</button>
     <div class="bgm-toggle">
       <label>
         <input type="checkbox" id="bgmToggle" checked>
@@ -1022,84 +1022,110 @@ function resetGame() {
   document.getElementById('startBtn').disabled = false;
 }
 
-// ===== BGM (OfflineAudioContext でループバッファを事前レンダリング) =====
+// ===== BGM =====
 const bgm = (() => {
-  let audioCtx = null, gainNode = null, source = null;
+  let ctx = null, gainNode = null, source = null;
   let buffer = null;
+  // フォールバック用 look-ahead scheduler
+  let playing = false, ticker = null, noteIdx = 0, nextNoteTime = 0;
 
-  // C minor, 76 BPM
   const B = 60 / 76;
-  const SR = 44100;
   const SEQ = [
-    [392.00, 2*B], [311.13, B],    [349.23, B],
-    [392.00, B],   [523.25, 1.5*B],[466.16, 0.5*B],[415.30, B],
-    [392.00, 2*B], [349.23, B],    [311.13, B],
-    [293.66, B],   [311.13, B],    [261.63, 2*B],
+    [392.00, 2*B], [311.13,   B], [349.23,     B],
+    [392.00,   B], [523.25, 1.5*B], [466.16, 0.5*B], [415.30, B],
+    [392.00, 2*B], [349.23,   B], [311.13,     B],
+    [293.66,   B], [311.13,   B], [261.63,   2*B],
   ];
-  const LOOP_DUR = SEQ.reduce((s, [, d]) => s + d, 0); // 16 beats
+  const LOOP_DUR = SEQ.reduce((s, [, d]) => s + d, 0);
 
-  // ページ読み込み時にバックグラウンドで音声バッファを生成（ユーザー操作不要）
-  (async () => {
-    try {
-      const off = new OfflineAudioContext(1, Math.ceil(SR * LOOP_DUR), SR);
-      let t = 0;
-      for (const [freq, dur] of SEQ) {
-        const osc = off.createOscillator();
-        const env = off.createGain();
-        osc.type = 'triangle';
-        osc.frequency.value = freq;
-        env.gain.setValueAtTime(0, t);
-        env.gain.linearRampToValueAtTime(0.3, t + 0.06);
-        env.gain.setValueAtTime(0.3, t + dur * 0.78);
-        env.gain.linearRampToValueAtTime(0, t + dur * 0.98);
-        osc.connect(env);
-        env.connect(off.destination);
-        osc.start(t);
-        osc.stop(t + dur);
-        t += dur;
-      }
-      buffer = await off.startRendering();
-    } catch(e) { /* OfflineAudioContext 非対応環境ではスキップ */ }
-  })();
-
-  function getCtx() {
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    return audioCtx;
+  // ページ読み込み時にバッファを事前生成（ユーザー操作不要）
+  const OffCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  if (OffCtx) {
+    (async () => {
+      try {
+        const off = new OffCtx(1, Math.ceil(44100 * LOOP_DUR), 44100);
+        let t = 0;
+        for (const [freq, dur] of SEQ) {
+          const osc = off.createOscillator();
+          const env = off.createGain();
+          osc.type = 'triangle';
+          osc.frequency.value = freq;
+          env.gain.setValueAtTime(0, t);
+          env.gain.linearRampToValueAtTime(0.3, t + 0.06);
+          env.gain.setValueAtTime(0.3, t + dur * 0.78);
+          env.gain.linearRampToValueAtTime(0, t + dur * 0.97);
+          osc.connect(env); env.connect(off.destination);
+          osc.start(t); osc.stop(t + dur);
+          t += dur;
+        }
+        buffer = await off.startRendering();
+      } catch(e) {}
+    })();
   }
 
-  function play(c) {
-    gainNode = c.createGain();
-    gainNode.gain.setValueAtTime(0, c.currentTime);
-    gainNode.gain.linearRampToValueAtTime(0.65, c.currentTime + 2.5);
-    gainNode.connect(c.destination);
+  // look-ahead scheduler（OfflineAudioContext が失敗した場合のフォールバック）
+  function tick() {
+    if (!playing || !ctx || !gainNode) return;
+    while (nextNoteTime < ctx.currentTime + 0.2) {
+      const [freq, dur] = SEQ[noteIdx % SEQ.length];
+      const osc = ctx.createOscillator();
+      const env = ctx.createGain();
+      osc.type = 'triangle'; osc.frequency.value = freq;
+      const t = nextNoteTime, d = dur * 0.88;
+      env.gain.setValueAtTime(0, t);
+      env.gain.linearRampToValueAtTime(0.25, t + 0.06);
+      env.gain.setValueAtTime(0.25, t + d * 0.78);
+      env.gain.linearRampToValueAtTime(0, t + d);
+      osc.connect(env); env.connect(gainNode);
+      osc.start(t); osc.stop(t + d + 0.02);
+      nextNoteTime += dur; noteIdx++;
+    }
+    ticker = setTimeout(tick, 80);
+  }
 
-    source = c.createBufferSource();
-    source.buffer = buffer;
-    source.loop = true;
-    source.connect(gainNode);
-    source.start();
+  function doPlay() {
+    gainNode = ctx.createGain();
+    gainNode.gain.setValueAtTime(0, ctx.currentTime);
+    gainNode.gain.linearRampToValueAtTime(0.65, ctx.currentTime + 2.5);
+    gainNode.connect(ctx.destination);
+    if (buffer) {
+      source = ctx.createBufferSource();
+      source.buffer = buffer; source.loop = true;
+      source.connect(gainNode); source.start();
+    } else {
+      playing = true; noteIdx = 0;
+      nextNoteTime = ctx.currentTime + 0.05;
+      tick();
+    }
   }
 
   return {
+    // iOS Safari 対応: ボタンの onclick から同期的に呼ぶこと
+    unlock() {
+      if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (ctx.state === 'suspended') ctx.resume();
+    },
     start() {
       if (!document.getElementById('bgmToggle').checked) return;
-      if (source || !buffer) return;
-      const c = getCtx();
-      if (c.state === 'suspended') {
-        c.resume().then(() => play(c));
+      if (source || playing) return;
+      if (!ctx) this.unlock();
+      if (ctx.state === 'suspended') {
+        ctx.resume().then(doPlay);
       } else {
-        play(c);
+        doPlay();
       }
     },
     stop() {
-      if (gainNode && audioCtx) {
-        const g = gainNode; gainNode = null;
-        const t = audioCtx.currentTime;
+      playing = false;
+      if (ticker) { clearTimeout(ticker); ticker = null; }
+      if (ctx && gainNode) {
+        const g = gainNode, s = source;
+        gainNode = null; source = null;
+        const t = ctx.currentTime;
         g.gain.cancelScheduledValues(t);
         g.gain.setValueAtTime(g.gain.value, t);
         g.gain.linearRampToValueAtTime(0, t + 1.5);
-        const s = source; source = null;
-        setTimeout(() => { try { s.stop(); s.disconnect(); g.disconnect(); } catch(e) {} }, 2000);
+        setTimeout(() => { try { if (s) { s.stop(); s.disconnect(); } g.disconnect(); } catch(e) {} }, 2000);
       }
     },
   };
