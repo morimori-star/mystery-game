@@ -1054,13 +1054,12 @@ const bgm = (() => {
 
   // 三角波 + ローパスフィルター（1音=1オシレーター、クリッピングなし）
   function synthNote(actx, dest, freq, t, dur) {
-    const d = Math.min(dur * 1.08, 2.0);
+    const d = Math.min(dur * 1.28, 2.4);  // 重なりを増やしてよりレガートに
     const lpf = actx.createBiquadFilter();
     const env = actx.createGain();
     lpf.type = 'lowpass';
-    lpf.frequency.value = 1100;
-    lpf.Q.value = 0.4;
-    // 2本をわずかにデチューンして重ねる（コーラス効果で音を太く）
+    lpf.frequency.value = 900;   // 高域を抑えて丸みを増す
+    lpf.Q.value = 0.3;
     for (const cents of [-3, +3]) {
       const osc = actx.createOscillator();
       osc.type = 'triangle';
@@ -1069,8 +1068,8 @@ const bgm = (() => {
       osc.start(t); osc.stop(t + d + 0.05);
     }
     env.gain.setValueAtTime(0, t);
-    env.gain.linearRampToValueAtTime(0.38, t + 0.06);
-    env.gain.setValueAtTime(0.35, t + d * 0.85);
+    env.gain.linearRampToValueAtTime(0.38, t + 0.09);  // アタックを90msに延ばす
+    env.gain.setValueAtTime(0.35, t + d * 0.90);       // サステインを長く
     env.gain.exponentialRampToValueAtTime(0.001, t + d);
     lpf.connect(env); env.connect(dest);
   }
