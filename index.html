@@ -603,6 +603,9 @@
         </div>
         <p class="reveal-explanation" id="revealExplanation"></p>
       </div>
+      <div style="text-align:center;margin-top:16px">
+        <button id="endingBtn" class="replay-btn" onclick="playEndingTheme()" style="display:none;margin-bottom:12px">エンディングテーマを再生</button>
+      </div>
       <div style="text-align:center">
         <button class="replay-btn" onclick="resetGame()">もう一度プレイ</button>
       </div>
@@ -967,9 +970,12 @@ async function makeGuess() {
     ? 'あなたは名探偵だ。真実を見抜いた。'
     : `あなたは ${guessName} を指名した。しかし…`;
 
+  startRevealBgm();
+
   document.getElementById('revealCulprit').textContent = state.culprit;
   document.getElementById('revealExplanation').textContent = '';
   document.getElementById('revealLoading').style.display = 'block';
+  document.getElementById('endingBtn').style.display = 'none';
 
   document.getElementById('guessSection').style.display = 'none';
   document.getElementById('inlineResult').style.display = 'block';
@@ -1015,6 +1021,7 @@ ${resultStatus}
   } finally {
     document.getElementById('revealLoading').style.display = 'none';
     document.getElementById('guessBtn').disabled = false;
+    document.getElementById('endingBtn').style.display = 'inline-block';
   }
 }
 
@@ -1074,6 +1081,30 @@ const bgm = (() => {
     },
   };
 })();
+
+// ===== 解答BGM =====
+const revealAudio = new Audio('薄明の足音.mp3');
+revealAudio.loop = true;
+revealAudio.preload = 'auto';
+
+function startRevealBgm() {
+  bgm.stop();
+  revealAudio.currentTime = 0;
+  revealAudio.volume = 0.75;
+  revealAudio.play().catch(() => {});
+}
+
+// ===== エンディング =====
+const endingAudio = new Audio('灰色の駅前.mp3');
+endingAudio.preload = 'auto';
+
+function playEndingTheme() {
+  revealAudio.pause();
+  endingAudio.currentTime = 0;
+  endingAudio.volume = 0.75;
+  endingAudio.play().catch(() => {});
+  document.getElementById('endingBtn').disabled = true;
+}
 
 document.getElementById('bgmToggle').addEventListener('change', function() {
   if (!this.checked) bgm.stop();
